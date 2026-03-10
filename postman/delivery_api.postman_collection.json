@@ -1,0 +1,373 @@
+{
+  "info": {
+    "name": "delivery_api",
+    "description": "API de delivery (YaYa Eats) — NestJS en puerto 3002",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url",         "value": "http://localhost:3002/api", "type": "string" },
+    { "key": "token",            "value": "", "type": "string" },
+    { "key": "token_mario",      "value": "", "type": "string" },
+    { "key": "order_id",         "value": "", "type": "string" },
+    { "key": "restaurant_id",    "value": "c0000001-0000-0000-0000-000000000000", "type": "string" },
+    { "key": "menu_item_id",     "value": "", "type": "string" },
+    { "key": "address_id",       "value": "", "type": "string" },
+    { "key": "group_id",         "value": "", "type": "string" },
+    { "key": "webhook_secret",   "value": "webhook_secret_dev_2024", "type": "string" }
+  ],
+  "item": [
+
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login — luis (client + rider + super_admin)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "if (j.accessToken) { pm.collectionVariables.set('token', j.accessToken); console.log('Token luis guardado'); }"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"luis@gmail.com\",\n  \"password\": \"luis123\"\n}" }
+          }
+        },
+        {
+          "name": "Login — mario (restaurant_owner)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "if (j.accessToken) { pm.collectionVariables.set('token_mario', j.accessToken); console.log('Token mario guardado'); }"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"mario@pizzeria.com\",\n  \"password\": \"mario123\"\n}" }
+          }
+        },
+        {
+          "name": "Registrar usuario",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/auth/register",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"nuevo@test.com\",\n  \"password\": \"pass123\",\n  \"firstName\": \"Nuevo\",\n  \"lastName\": \"Usuario\"\n}" }
+          }
+        },
+        {
+          "name": "Mi perfil",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/auth/me"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Restaurantes",
+      "item": [
+        {
+          "name": "Listar restaurantes",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/restaurants"
+          }
+        },
+        {
+          "name": "Buscar restaurante",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/restaurants?search=pizza",
+              "host": ["{{base_url}}"],
+              "path": ["restaurants"],
+              "query": [{ "key": "search", "value": "pizza" }]
+            }
+          }
+        },
+        {
+          "name": "Categorías de restaurantes",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/restaurants/categories"
+          }
+        },
+        {
+          "name": "Detalle restaurante + menú",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "if (j.menu && j.menu.length > 0) {",
+            "  pm.collectionVariables.set('menu_item_id', j.menu[0].id);",
+            "  console.log('menu_item_id guardado:', j.menu[0].id);",
+            "}"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/restaurants/{{restaurant_id}}"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Pedidos — Cliente",
+      "item": [
+        {
+          "name": "Crear pedido (delivery)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "if (j.id) { pm.collectionVariables.set('order_id', j.id); console.log('order_id guardado:', j.id); }"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": \"{{restaurant_id}}\",\n  \"items\": [\n    { \"menuItemId\": \"{{menu_item_id}}\", \"quantity\": 2 }\n  ],\n  \"deliveryType\": \"delivery\",\n  \"deliveryAddress\": \"Av. 6 de Agosto 1234\",\n  \"notes\": \"Sin cebolla por favor\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Mis pedidos",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/orders"
+          }
+        },
+        {
+          "name": "Detalle de pedido",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/orders/{{order_id}}"
+          }
+        },
+        {
+          "name": "Cancelar pedido",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/orders/{{order_id}}/cancel"
+          }
+        },
+        {
+          "name": "Confirmar pago (webhook)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-payment-secret", "value": "{{webhook_secret}}" }
+            ],
+            "url": "{{base_url}}/orders/{{order_id}}/pay",
+            "body": { "mode": "raw", "raw": "{\n  \"paidAmount\": 100\n}" }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Pedidos — Restaurante (mario@pizzeria.com)",
+      "item": [
+        {
+          "name": "Ver pedidos de mi restaurante",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_mario}}" }],
+            "url": "{{base_url}}/orders/restaurant/mine"
+          }
+        },
+        {
+          "name": "Confirmar pedido (pendiente → confirmado)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token_mario}}" }
+            ],
+            "url": "{{base_url}}/orders/{{order_id}}/status",
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"confirmado\"\n}" }
+          }
+        },
+        {
+          "name": "Marcar preparando (confirmado → preparando)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token_mario}}" }
+            ],
+            "url": "{{base_url}}/orders/{{order_id}}/status",
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"preparando\"\n}" }
+          }
+        },
+        {
+          "name": "Marcar LISTO — dispara agrupamiento",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "console.log('Grupos creados:', j.groupsCreated);",
+            "if (j.groupsCreated > 0) console.log('¡Se armó un grupo! Revisá Rider > Grupos disponibles');"
+          ]}}],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token_mario}}" }
+            ],
+            "url": "{{base_url}}/rider/orders/{{order_id}}/ready"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Rider — Delivery (luis@gmail.com)",
+      "item": [
+        {
+          "name": "Grupos disponibles",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "if (Array.isArray(j) && j.length > 0) {",
+            "  pm.collectionVariables.set('group_id', j[0].id);",
+            "  console.log('group_id guardado:', j[0].id, '— pedidos:', j[0].orders?.length);",
+            "}"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/rider/groups/available"
+          }
+        },
+        {
+          "name": "Aceptar grupo",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/rider/groups/{{group_id}}/accept"
+          }
+        },
+        {
+          "name": "Mi entrega activa",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/rider/groups/my-active"
+          }
+        },
+        {
+          "name": "Marcar pedido entregado",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/rider/orders/{{order_id}}/delivered"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Direcciones",
+      "item": [
+        {
+          "name": "Mis direcciones",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/addresses"
+          }
+        },
+        {
+          "name": "Crear dirección",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "if (j.id) { pm.collectionVariables.set('address_id', j.id); console.log('address_id guardado:', j.id); }"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/addresses",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Casa\",\n  \"street\": \"Av. 6 de Agosto\",\n  \"number\": \"1234\",\n  \"reference\": \"Frente al parque\",\n  \"latitude\": -16.5000,\n  \"longitude\": -68.1500,\n  \"isDefault\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Actualizar dirección",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/addresses/{{address_id}}",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Casa actualizada\",\n  \"street\": \"Av. Arce\",\n  \"number\": \"2000\"\n}" }
+          }
+        },
+        {
+          "name": "Eliminar dirección",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/addresses/{{address_id}}"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Config — Super Admin",
+      "item": [
+        {
+          "name": "Ver todas las configuraciones",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/config"
+          }
+        },
+        {
+          "name": "Ver radio de agrupamiento",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/config/nearby_restaurant_radius_meters"
+          }
+        },
+        {
+          "name": "Cambiar radio (200 metros default)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/config/nearby_restaurant_radius_meters",
+            "body": { "mode": "raw", "raw": "{\n  \"value\": \"200\"\n}" }
+          }
+        },
+        {
+          "name": "Cambiar máx pedidos por grupo (3 default)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/config/max_orders_per_group",
+            "body": { "mode": "raw", "raw": "{\n  \"value\": \"3\"\n}" }
+          }
+        }
+      ]
+    }
+
+  ]
+}

@@ -1,0 +1,20 @@
+import { IsString, IsArray, IsOptional, IsEnum, ValidateNested, IsNumber, IsPositive } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class OrderItemDto {
+  @ApiProperty() @IsString() menuItemId: string;
+  @ApiProperty() @IsNumber() @IsPositive() quantity: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
+}
+
+export class CreateOrderDto {
+  @ApiProperty() @IsString() restaurantId: string;
+  @ApiProperty({ type: [OrderItemDto] })
+  @IsArray() @ValidateNested({ each: true }) @Type(() => OrderItemDto)
+  items: OrderItemDto[];
+  @ApiProperty({ required: false, enum: ['delivery', 'recogida', 'express'] })
+  @IsOptional() @IsEnum(['delivery', 'recogida', 'express']) deliveryType?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() deliveryAddress?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
+}
