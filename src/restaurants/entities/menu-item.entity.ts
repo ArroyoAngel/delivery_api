@@ -11,5 +11,14 @@ export class MenuItemEntity {
   @Column({ name: 'image_url', nullable: true }) imageUrl: string;
   @Column({ name: 'is_available', default: true }) isAvailable: boolean;
   @Column({ type: 'int', default: 1 })
-  size: number; // tamaño físico del producto — lo define el restaurante (1=pequeño, 2=mediano, 3=grande)
+  size: number; // tamaño físico del producto (1=pequeño, 2=mediano, 3=grande)
+
+  /** Unidades en stock. NULL = ilimitado */
+  @Column({ type: 'int', nullable: true, default: null }) stock: number | null;
+
+  /** Límite de ventas diarias. NULL = sin límite */
+  @Column({ name: 'daily_limit', type: 'int', nullable: true, default: null }) dailyLimit: number | null;
+
+  /** Unidades vendidas en el día (se resetea cada día) */
+  @Column({ name: 'daily_sold', type: 'int', default: 0 }) dailySold: number;
 }

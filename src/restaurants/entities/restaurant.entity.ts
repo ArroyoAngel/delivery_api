@@ -3,7 +3,7 @@ import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeor
 @Entity('restaurants')
 export class RestaurantEntity {
   @PrimaryGeneratedColumn('uuid') id: string;
-  @Column({ name: 'owner_id', nullable: true }) ownerId: string;
+  @Column({ name: 'owner_account_id', nullable: true }) ownerAccountId: string;
   @Column() name: string;
   @Column({ nullable: true }) description: string;
   @Column() address: string;
@@ -16,5 +16,7 @@ export class RestaurantEntity {
   @Column({ name: 'delivery_fee', type: 'decimal', precision: 10, scale: 2, default: 0 }) deliveryFee: number;
   @Column({ name: 'minimum_order', type: 'decimal', precision: 10, scale: 2, default: 0 }) minimumOrder: number;
   @Column({ name: 'is_open', default: true }) isOpen: boolean;
+  @Column({ name: 'opening_time', type: 'time', nullable: true, default: null }) openingTime: string | null;
+  @Column({ name: 'closing_time', type: 'time', nullable: true, default: null }) closingTime: string | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
 }

@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { Roles, RolesGuard } from '../auth/roles.guard';
+import { CasbinGuard } from '../authorization/guards/casbin.guard';
 import { SystemConfigService } from './system-config.service';
 
 @ApiTags('Config')
@@ -22,10 +22,9 @@ export class SystemConfigController {
   }
 
   @Put(':key')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('super_admin')
+  @UseGuards(JwtAuthGuard, CasbinGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Actualizar configuración — solo super_admin' })
+  @ApiOperation({ summary: 'Actualizar configuración — solo superadmin' })
   update(@Param('key') key: string, @Body() body: { value: string }) {
     return this.cfg.set(key, body.value);
   }

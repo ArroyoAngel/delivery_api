@@ -7,11 +7,15 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth.guard';
-import { UserEntity } from './user.entity';
+import { AccountEntity } from './account.entity';
+import { ProfileEntity } from '../profiles/profile.entity';
+import { ClientEntity } from '../profiles/client.entity';
+import { RiderEntity } from '../profiles/rider.entity';
+import { AdminEntity } from '../profiles/admin.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([UserEntity]),
+    TypeOrmModule.forFeature([AccountEntity, ProfileEntity, ClientEntity, RiderEntity, AdminEntity]),
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

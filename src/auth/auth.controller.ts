@@ -33,4 +33,12 @@ export class AuthController {
   me(@Request() req) {
     return this.auth.me(req.user.id);
   }
+
+  @Get('frontend-access')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Rutas de frontend permitidas para el usuario actual' })
+  frontendAccess(@Request() req) {
+    return this.auth.getFrontendAccess(req.user.id, req.user.roles ?? []);
+  }
 }

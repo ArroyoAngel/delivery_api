@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { Roles, RolesGuard } from '../auth/roles.guard';
+import { CasbinGuard } from '../authorization/guards/casbin.guard';
 
 @ApiTags('Orders')
 @Controller('orders')
@@ -18,10 +18,24 @@ export class OrdersController {
     return this.orders.findMyOrders(req.user.id);
   }
 
+  @Get('admin/all')
+  @UseGuards(CasbinGuard)
+  @ApiOperation({ summary: 'Todos los pedidos — superadmin/admin' })
+  allOrders() {
+    return this.orders.findAllOrders();
+  }
+
+  @Get('admin/stats')
+  @UseGuards(CasbinGuard)
+  @ApiOperation({ summary: 'Estadísticas globales — solo superadmin' })
+  adminStats() {
+    return this.orders.getAdminStats();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Detalle de un pedido' })
   findOne(@Request() req, @Param('id') id: string) {
-    return this.orders.findOne(req.user.id, id);
+    return this.orders.findOne(req.user.id, id, req.user.roles ?? []);
   }
 
   @Post()
@@ -37,16 +51,14 @@ export class OrdersController {
   }
 
   @Put(':id/status')
-  @UseGuards(RolesGuard)
-  @Roles('restaurant_owner', 'super_admin')
-  @ApiOperation({ summary: 'Actualizar estado de pedido — solo restaurant_owner / super_admin' })
+  @UseGuards(CasbinGuard)
+  @ApiOperation({ summary: 'Actualizar estado de pedido — solo admin / superadmin' })
   updateStatus(@Param('id') id: string, @Body() body: { status: string }) {
     return this.orders.updateStatus(id, body.status);
   }
 
   @Get('restaurant/mine')
-  @UseGuards(RolesGuard)
-  @Roles('restaurant_owner', 'super_admin')
+  @UseGuards(CasbinGuard)
   @ApiOperation({ summary: 'Pedidos de mi restaurante' })
   restaurantOrders(@Request() req) {
     return this.orders.findRestaurantOrders(req.user.id);

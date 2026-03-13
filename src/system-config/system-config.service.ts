@@ -19,6 +19,11 @@ const DEFAULTS: { key: string; value: string; description: string }[] = [
     value: '5',
     description: 'Minutos de espera antes de enviar un pedido solo sin grupo completo',
   },
+  {
+    key: 'location_interval_seconds',
+    value: '5',
+    description: 'Intervalo en segundos entre puntos GPS del repartidor (1–300). Se aplica al iniciar sesión de tracking.',
+  },
 ];
 
 @Injectable()

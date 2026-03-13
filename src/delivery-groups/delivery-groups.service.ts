@@ -29,6 +29,106 @@ export class DeliveryGroupsService {
     private cfg: SystemConfigService,
   ) {}
 
+  async getLocationIntervalSeconds(): Promise<number> {
+    const val = await this.cfg.getNumber('location_interval_seconds', 5);
+    return Math.min(Math.max(1, val), 300); // clamp 1–300 s
+  }
+
+  async saveLocationSegment(
+    riderId: string,
+    path: string,
+    startedAt: string,
+    endedAt: string,
+    intervalSeconds: number,
+  ) {
+    if (!path) return { inserted: 0 };
+    const clamped = Math.min(Math.max(1, intervalSeconds), 300);
+    await this.dataSource.query(
+      `INSERT INTO rider_location_history (rider_id, path, started_at, ended_at, interval_seconds)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [riderId, path, startedAt, endedAt, clamped],
+    );
+    return { inserted: 1 };
+  }
+
+  async getRiderLocationHistory(riderId: string, date: string) {
+    return this.dataSource.query(
+      `SELECT path, started_at AS "startedAt", ended_at AS "endedAt", interval_seconds AS "intervalSeconds"
+       FROM rider_location_history
+       WHERE rider_id = $1
+         AND DATE(started_at AT TIME ZONE 'America/La_Paz') = $2
+       ORDER BY started_at ASC`,
+      [riderId, date],
+    );
+  }
+
+  async getRiderLocationDates(riderId: string): Promise<string[]> {
+    const rows = await this.dataSource.query(
+      `SELECT DISTINCT DATE(started_at AT TIME ZONE 'America/La_Paz') AS date
+       FROM rider_location_history
+       WHERE rider_id = $1
+       ORDER BY date DESC`,
+      [riderId],
+    );
+    return rows.map((r: { date: string | Date }) =>
+      (r.date instanceof Date ? r.date.toISOString() : String(r.date)).slice(0, 10),
+    );
+  }
+
+  async getRiderDeliveries(riderId: string, date?: string) {
+    const params: any[] = [riderId];
+    const dateClause = date
+      ? `AND DATE(o.updated_at AT TIME ZONE 'America/La_Paz') = $2`
+      : '';
+    if (date) params.push(date);
+    return this.dataSource.query(
+      `SELECT o.id, o.status, o.total::numeric AS total,
+              o.delivery_address AS "deliveryAddress",
+              o.delivery_lat AS "deliveryLat",
+              o.delivery_lng AS "deliveryLng",
+              o.updated_at AS "deliveredAt",
+              o.created_at AS "createdAt",
+              r.name AS "restaurantName"
+       FROM orders o
+       JOIN restaurants r ON r.id = o.restaurant_id
+       WHERE o.rider_id = $1 AND o.status = 'entregado'
+       ${dateClause}
+       ORDER BY o.updated_at DESC`,
+      params,
+    );
+  }
+
+  /** Resolve riders.id from accounts.id (JWT sub). Returns null if not a rider. */
+  private async resolveRiderId(accountId: string): Promise<string | null> {
+    const [row] = await this.dataSource.query(
+      `SELECT r.id FROM riders r
+       JOIN profiles p ON p.id = r.profile_id
+       WHERE p.account_id = $1`,
+      [accountId],
+    );
+    return row?.id ?? null;
+  }
+
+  async getAllRiders() {
+    return this.dataSource.query(`
+      SELECT
+        r.id,
+        r.vehicle_type  AS "vehicleType",
+        r.is_available  AS "isAvailable",
+        r.lat, r.lng,
+        r.created_at    AS "createdAt",
+        p.first_name    AS "firstName",
+        p.last_name     AS "lastName",
+        p.phone,
+        p.avatar_url    AS "avatarUrl",
+        a.email
+      FROM riders r
+      JOIN profiles p ON p.id = r.profile_id
+      JOIN accounts a ON a.id = p.account_id
+      ORDER BY r.is_available DESC, p.first_name
+    `);
+  }
+
   // Busca pedidos 'listo' sin grupo y los agrupa
   async tryGroupOrders(): Promise<DeliveryGroupEntity[]> {
     const maxOrders = await this.cfg.getNumber('max_orders_per_group', 3);
@@ -113,7 +213,9 @@ export class DeliveryGroupsService {
     return Promise.all(groups.map((g) => this.enrichGroup(g)));
   }
 
-  async getMyActiveGroup(riderId: string) {
+  async getMyActiveGroup(accountId: string) {
+    const riderId = await this.resolveRiderId(accountId);
+    if (!riderId) return null;
     const group = await this.groups.findOne({
       where: [
         { riderId, status: 'assigned' },
@@ -124,7 +226,10 @@ export class DeliveryGroupsService {
     return this.enrichGroup(group);
   }
 
-  async acceptGroup(riderId: string, groupId: string) {
+  async acceptGroup(accountId: string, groupId: string) {
+    const riderId = await this.resolveRiderId(accountId);
+    if (!riderId) throw new ForbiddenException('No estás registrado como repartidor');
+
     const group = await this.groups.findOne({ where: { id: groupId, status: 'available' } });
     if (!group) throw new NotFoundException('Grupo no disponible');
     const already = await this.groups.findOne({
@@ -143,8 +248,9 @@ export class DeliveryGroupsService {
     return this.enrichGroup({ ...group, riderId, status: 'assigned' });
   }
 
-  async markOrderDelivered(riderId: string, orderId: string) {
-    const order = await this.orders.findOne({ where: { id: orderId, riderId } });
+  async markOrderDelivered(accountId: string, orderId: string) {
+    const riderId = await this.resolveRiderId(accountId);
+    const order = await this.orders.findOne({ where: { id: orderId, riderId: riderId ?? undefined } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (order.status === 'entregado') return { message: 'Ya entregado' };
 

@@ -3,7 +3,7 @@ import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeor
 @Entity('user_addresses')
 export class AddressEntity {
   @PrimaryGeneratedColumn('uuid') id: string;
-  @Column({ name: 'user_id' }) userId: string;
+  @Column({ name: 'account_id' }) accountId: string;
   @Column() name: string;
   @Column() street: string;
   @Column({ nullable: true }) number: string;

@@ -17,7 +17,15 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "typeorm": "ts-node --project tsconfig.typeorm.json ./node_modules/typeorm/cli.js",
+    "migrations:generate": "npm run typeorm -- migration:generate -d ormconfig.ts",
+    "migrations:run": "npm run typeorm -- migration:run -d ormconfig.ts",
+    "migrations:revert": "npm run typeorm -- migration:revert -d ormconfig.ts",
+    "seeds:run": "npm run typeorm -- migration:run -d ormconfig-seed.ts",
+    "seeds:revert": "npm run typeorm -- migration:revert -d ormconfig-seed.ts",
+    "schema:drop": "npm run typeorm -- schema:drop -d ormconfig.ts",
+    "setup": "npm run migrations:run && npm run seeds:run"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -30,15 +38,18 @@
     "@nestjs/swagger": "^11.2.6",
     "@nestjs/typeorm": "^11.0.0",
     "bcrypt": "^6.0.0",
+    "casbin": "^5.49.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.4",
+    "nest-authz": "^2.17.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "swagger-ui-express": "^5.0.1",
-    "typeorm": "^0.3.28"
+    "typeorm": "^0.3.28",
+    "typeorm-adapter": "^1.9.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

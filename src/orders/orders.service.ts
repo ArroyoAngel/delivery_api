@@ -33,9 +33,35 @@ export class OrdersService {
     );
   }
 
-  async findOne(userId: string, orderId: string) {
-    const order = await this.orders.findOne({ where: { id: orderId, clientId: userId } });
+  async findOne(userId: string, orderId: string, roles: string[] = []) {
+    const isElevated = roles.some((r) =>
+      ['admin', 'superadmin'].includes(r),
+    );
+
+    // Clientes solo ven sus propias órdenes; roles elevados ven cualquiera
+    const where: any = isElevated ? { id: orderId } : { id: orderId, clientId: userId };
+    const order = await this.orders.findOne({ where });
     if (!order) throw new NotFoundException('Orden no encontrada');
+
+    // Admin/staff que no sea superadmin: verificar que la orden pertenezca a su restaurante
+    const isSuperAdmin = roles.some((r) => ['superadmin', 'super_admin'].includes(r));
+    if (isElevated && !isSuperAdmin) {
+      const [hasAccess] = await this.dataSource.query(
+        `SELECT 1 FROM restaurants r
+         WHERE r.id = $1
+           AND (
+             r.owner_account_id = $2
+             OR EXISTS (
+               SELECT 1 FROM admins a
+               JOIN profiles p ON p.id = a.profile_id
+               WHERE p.account_id = $2 AND a.restaurant_id = r.id
+             )
+           )`,
+        [order.restaurantId, userId],
+      );
+      if (!hasAccess) throw new ForbiddenException('No tenés acceso a esta orden');
+    }
+
     const items = await this.dataSource.query(
       `SELECT oi.*, mi.name AS item_name, mi.image_url, mi.description
        FROM order_items oi JOIN menu_items mi ON mi.id = oi.menu_item_id
@@ -57,14 +83,24 @@ export class OrdersService {
       let orderSize = 0;
       for (const item of dto.items) {
         const rows = await em.query(
-          'SELECT id, price, is_available, COALESCE(size, 1) AS size FROM menu_items WHERE id = $1',
+          'SELECT id, price, is_available, COALESCE(size, 1) AS size, stock, daily_limit, daily_sold FROM menu_items WHERE id = $1',
           [item.menuItemId],
         );
         if (!rows.length) throw new NotFoundException(`Item ${item.menuItemId} no encontrado`);
-        if (!rows[0].is_available) throw new BadRequestException(`Item no disponible`);
-        const unitPrice = Number(rows[0].price);
+        const mi = rows[0];
+        if (!mi.is_available) throw new BadRequestException(`Item no disponible`);
+        // Stock check
+        if (mi.stock !== null && mi.stock !== undefined) {
+          if (Number(mi.stock) < item.quantity) throw new BadRequestException(`Stock insuficiente para el item`);
+        }
+        // Daily limit check
+        if (mi.daily_limit !== null && mi.daily_limit !== undefined) {
+          const remaining = Number(mi.daily_limit) - Number(mi.daily_sold ?? 0);
+          if (remaining < item.quantity) throw new BadRequestException(`Límite diario alcanzado para el item`);
+        }
+        const unitPrice = Number(mi.price);
         subtotal += unitPrice * item.quantity;
-        orderSize += Number(rows[0].size) * item.quantity;
+        orderSize += Number(mi.size) * item.quantity;
         validatedItems.push({ menuItemId: item.menuItemId, quantity: item.quantity, unitPrice, notes: item.notes });
       }
 
@@ -81,7 +117,7 @@ export class OrdersService {
       if (deliveryType !== 'recogida' && !deliveryAddress) {
         const [defaultAddr] = await em.query(
           `SELECT street, number, floor, latitude, longitude FROM user_addresses
-           WHERE user_id = $1 AND is_default = true LIMIT 1`,
+           WHERE account_id = $1 AND is_default = true LIMIT 1`,
           [userId],
         );
         if (defaultAddr) {
@@ -113,17 +149,40 @@ export class OrdersService {
           'INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price, notes) VALUES ($1,$2,$3,$4,$5)',
           [saved.id, item.menuItemId, item.quantity, item.unitPrice, item.notes ?? null],
         );
+        // Decrement stock and daily_sold; auto-disable if stock reaches 0 or daily_limit reached
+        await em.query(
+          `UPDATE menu_items SET
+            stock       = CASE WHEN stock IS NOT NULL THEN stock - $2 ELSE stock END,
+            daily_sold  = daily_sold + $2,
+            is_available = CASE
+              WHEN stock IS NOT NULL AND (stock - $2) <= 0 THEN false
+              WHEN daily_limit IS NOT NULL AND (daily_sold + $2) >= daily_limit THEN false
+              ELSE is_available
+            END
+          WHERE id = $1`,
+          [item.menuItemId, item.quantity],
+        );
       }
       return saved;
     });
   }
 
   async findRestaurantOrders(ownerId: string) {
-    // Busca el restaurante del dueño
-    const [restaurant] = await this.dataSource.query(
-      'SELECT id, name FROM restaurants WHERE owner_id = $1',
+    // Busca el restaurante: primero como dueño, luego como staff asignado
+    let [restaurant] = await this.dataSource.query(
+      'SELECT id, name FROM restaurants WHERE owner_account_id = $1',
       [ownerId],
     );
+    if (!restaurant) {
+      [restaurant] = await this.dataSource.query(
+        `SELECT r.id, r.name FROM restaurants r
+         JOIN admins a ON a.restaurant_id = r.id
+         JOIN profiles p ON p.id = a.profile_id
+         WHERE p.account_id = $1
+         LIMIT 1`,
+        [ownerId],
+      );
+    }
     if (!restaurant) throw new NotFoundException('No tenés un restaurante asignado');
 
     const rows = await this.orders.find({
@@ -140,13 +199,15 @@ export class OrdersService {
           [o.id],
         );
         const [client] = await this.dataSource.query(
-          'SELECT first_name, last_name, phone FROM users WHERE id = $1',
+          `SELECT p.first_name, p.last_name, p.phone
+           FROM accounts a LEFT JOIN profiles p ON p.account_id = a.id
+           WHERE a.id = $1`,
           [o.clientId],
         );
         return {
           ...o,
           items,
-          clientName: client ? `${client.first_name} ${client.last_name}` : '',
+          clientName: client ? `${client.first_name ?? ''} ${client.last_name ?? ''}`.trim() : '',
           clientPhone: client?.phone ?? '',
         };
       }),
@@ -192,5 +253,88 @@ export class OrdersService {
     }
     await this.orders.update(orderId, { status: 'confirmado' });
     return { id: orderId, status: 'confirmado', paidAt: new Date().toISOString(), total: order.total };
+  }
+
+  async findAllOrders() {
+    const rows = await this.dataSource.query(`
+      SELECT
+        o.*,
+        r.name AS restaurant_name,
+        p.first_name, p.last_name
+      FROM orders o
+      LEFT JOIN restaurants r ON r.id = o.restaurant_id
+      LEFT JOIN accounts a ON a.id = o.client_id
+      LEFT JOIN profiles p ON p.account_id = a.id
+      ORDER BY o.created_at DESC
+    `);
+    return Promise.all(
+      rows.map(async (o: any) => {
+        const items = await this.dataSource.query(
+          `SELECT oi.quantity, oi.unit_price, mi.name AS item_name
+           FROM order_items oi JOIN menu_items mi ON mi.id = oi.menu_item_id
+           WHERE oi.order_id = $1`,
+          [o.id],
+        );
+        return {
+          id: o.id,
+          clientId: o.client_id,
+          restaurantId: o.restaurant_id,
+          restaurantName: o.restaurant_name ?? '',
+          clientName: `${o.first_name ?? ''} ${o.last_name ?? ''}`.trim(),
+          status: o.status,
+          total: Number(o.total),
+          deliveryFee: Number(o.delivery_fee),
+          deliveryType: o.delivery_type,
+          deliveryAddress: o.delivery_address,
+          deliveryLat: o.delivery_lat ? Number(o.delivery_lat) : null,
+          deliveryLng: o.delivery_lng ? Number(o.delivery_lng) : null,
+          notes: o.notes,
+          createdAt: o.created_at,
+          items,
+        };
+      }),
+    );
+  }
+
+  async getAdminStats() {
+    const rows = await this.dataSource.query(`
+      SELECT
+        COUNT(*)::int                                                                     AS total,
+        COUNT(CASE WHEN DATE(created_at AT TIME ZONE 'America/La_Paz') = CURRENT_DATE THEN 1 END)::int AS orders_today,
+        COALESCE(SUM(CASE WHEN DATE(created_at AT TIME ZONE 'America/La_Paz') = CURRENT_DATE
+          AND status IN ('confirmado','preparando','listo','en_camino','entregado')
+          THEN total ELSE 0 END), 0)::numeric                                            AS revenue_today,
+        COUNT(CASE WHEN delivery_type = 'delivery' THEN 1 END)::int                      AS delivery_count,
+        COUNT(CASE WHEN delivery_type = 'recogida' THEN 1 END)::int                      AS recogida_count,
+        COUNT(CASE WHEN delivery_type = 'express'  THEN 1 END)::int                      AS express_count,
+        COUNT(CASE WHEN status = 'pendiente'   THEN 1 END)::int                          AS s_pendiente,
+        COUNT(CASE WHEN status = 'confirmado'  THEN 1 END)::int                          AS s_confirmado,
+        COUNT(CASE WHEN status = 'preparando'  THEN 1 END)::int                          AS s_preparando,
+        COUNT(CASE WHEN status = 'listo'       THEN 1 END)::int                          AS s_listo,
+        COUNT(CASE WHEN status = 'en_camino'   THEN 1 END)::int                          AS s_en_camino,
+        COUNT(CASE WHEN status = 'entregado'   THEN 1 END)::int                          AS s_entregado,
+        COUNT(CASE WHEN status = 'cancelado'   THEN 1 END)::int                          AS s_cancelado
+      FROM orders
+    `);
+    const r = rows[0];
+    return {
+      total: r.total,
+      ordersToday: r.orders_today,
+      revenueToday: Number(r.revenue_today),
+      byType: [
+        { type: 'Delivery',  count: r.delivery_count },
+        { type: 'Recogida',  count: r.recogida_count },
+        { type: 'Express',   count: r.express_count  },
+      ],
+      byStatus: [
+        { status: 'Pendiente',  count: r.s_pendiente  },
+        { status: 'Confirmado', count: r.s_confirmado },
+        { status: 'Preparando', count: r.s_preparando },
+        { status: 'Listo',      count: r.s_listo      },
+        { status: 'En camino',  count: r.s_en_camino  },
+        { status: 'Entregado',  count: r.s_entregado  },
+        { status: 'Cancelado',  count: r.s_cancelado  },
+      ].filter((s) => s.count > 0),
+    };
   }
 }
