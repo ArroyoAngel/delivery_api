@@ -55,7 +55,7 @@ m = r.sub == p.sub && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act) && p.e
         password: cfg.get('DB_PASSWORD', 'arroyo1234'),
         synchronize: false,
         autoLoadEntities: true,
-        migrations: ['dist/database/migrations/*.js'],
+        migrations: ['dist/database/migrations/*.js', 'dist/database/seeds/*.js'],
         migrationsRun: true,
       }),
       inject: [ConfigService],
