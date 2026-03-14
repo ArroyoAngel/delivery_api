@@ -71,7 +71,7 @@ m = r.sub == p.sub && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act) && p.e
             database: cfg.get('DB_NAME', 'delivery'),
             username: cfg.get('DB_USER', 'arroyo'),
             password: cfg.get('DB_PASSWORD', 'arroyo1234'),
-            synchronize: false,
+            synchronize: true,
           });
           return newEnforcer(newModel(CASBIN_MODEL), adapter);
         },
