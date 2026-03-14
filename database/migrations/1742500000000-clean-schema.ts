@@ -105,7 +105,7 @@ export class CleanSchema1742500000000 implements MigrationInterface {
 
     // ── 7. casbin_rule ────────────────────────────────────────────────────
     await queryRunner.query(`
-      CREATE TABLE casbin_rule (
+      CREATE TABLE IF NOT EXISTS casbin_rule (
         id    SERIAL  NOT NULL,
         ptype VARCHAR,
         v0    VARCHAR,
