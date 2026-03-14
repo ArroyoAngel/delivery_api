@@ -2,12 +2,18 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { AccountEntity } from '../auth/account.entity';
+import { ProfileEntity } from '../profiles/profile.entity';
+import { ClientEntity } from '../profiles/client.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(AccountEntity)
     private accounts: Repository<AccountEntity>,
+    @InjectRepository(ProfileEntity)
+    private profiles: Repository<ProfileEntity>,
+    @InjectRepository(ClientEntity)
+    private clients: Repository<ClientEntity>,
     private dataSource: DataSource,
   ) {}
 
@@ -26,8 +32,24 @@ export class UsersService {
     const hadAdmin = account.roles.includes('admin');
     const losesAdmin = hadAdmin && !roles.includes('admin');
 
-    account.roles = roles;
+    // Un rider siempre debe tener también el rol client (puede ordenar comida)
+    const normalizedRoles = roles.includes('rider') && !roles.includes('client')
+      ? [...roles, 'client']
+      : roles;
+
+    account.roles = normalizedRoles;
     await this.accounts.save(account);
+
+    // Si se asigna el rol rider, garantizar que exista el registro en clients
+    if (normalizedRoles.includes('rider') && account.profile) {
+      const existing = await this.clients.findOne({
+        where: { profile: { id: account.profile.id } },
+      });
+      if (!existing) {
+        const client = this.clients.create({ profile: account.profile });
+        await this.clients.save(client);
+      }
+    }
 
     // Cascade: si el dueño pierde el rol 'admin', todos los staff derivados
     // de su perfil admin pierden el rol 'restaurant_staff'.

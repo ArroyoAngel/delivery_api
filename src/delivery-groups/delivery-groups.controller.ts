@@ -74,6 +74,12 @@ export class DeliveryGroupsController {
     return this.service.acceptGroup(req.user.id, id);
   }
 
+  @Put('orders/:orderId/pickup')
+  @ApiOperation({ summary: 'Marcar pedido como recogido del restaurante (aceptado → en_camino)' })
+  markPickedUp(@Request() req: any, @Param('orderId') orderId: string) {
+    return this.service.markOrderPickedUp(req.user.id, orderId);
+  }
+
   @Put('orders/:orderId/delivered')
   @ApiOperation({ summary: 'Marcar un pedido como entregado' })
   markDelivered(@Request() req, @Param('orderId') orderId: string) {

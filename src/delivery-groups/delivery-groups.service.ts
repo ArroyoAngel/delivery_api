@@ -144,7 +144,12 @@ export class DeliveryGroupsService {
     const createdGroups: DeliveryGroupEntity[] = [];
     const assigned = new Set<string>();
 
-    // Obtenemos info de restaurantes para los pedidos
+    // Express orders already have a group assigned at checkout time — skip them here
+    for (const o of ungrouped) {
+      if (o.deliveryType === 'express') assigned.add(o.id);
+    }
+
+    // Obtenemos info de restaurantes para los pedidos regulares
     const restaurantIds = [...new Set(ungrouped.map((o) => o.restaurantId))];
     const restaurants: { id: string; latitude: number; longitude: number }[] =
       restaurantIds.length > 0
@@ -242,10 +247,29 @@ export class DeliveryGroupsService {
 
     await this.groups.update(groupId, { riderId, status: 'assigned' });
     await this.dataSource.query(
-      `UPDATE orders SET status = 'en_camino', rider_id = $1 WHERE group_id = $2`,
+      `UPDATE orders SET rider_id = $1 WHERE group_id = $2`,
       [riderId, groupId],
     );
     return this.enrichGroup({ ...group, riderId, status: 'assigned' });
+  }
+
+  async markOrderPickedUp(accountId: string, orderId: string) {
+    const riderId = await this.resolveRiderId(accountId);
+    const order = await this.orders.findOne({ where: { id: orderId, riderId: riderId ?? undefined } });
+    if (!order) throw new NotFoundException('Orden no encontrada');
+    if (order.status !== 'listo') throw new ForbiddenException(`El pedido aún no está listo para recoger (estado: ${order.status})`);
+    await this.orders.update(orderId, { status: 'en_camino' });
+    return { id: orderId, status: 'en_camino' };
+  }
+
+  async markOrderPreparing(orderId: string) {
+    const order = await this.orders.findOne({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Orden no encontrada');
+    if (!['confirmado', 'pendiente'].includes(order.status)) {
+      throw new ForbiddenException(`No se puede pasar a preparando desde '${order.status}'`);
+    }
+    await this.orders.update(orderId, { status: 'preparando' });
+    return { id: orderId, status: 'preparando' };
   }
 
   async markOrderDelivered(accountId: string, orderId: string) {
@@ -253,6 +277,7 @@ export class DeliveryGroupsService {
     const order = await this.orders.findOne({ where: { id: orderId, riderId: riderId ?? undefined } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (order.status === 'entregado') return { message: 'Ya entregado' };
+    if (order.status !== 'en_camino') throw new ForbiddenException('Debés recoger el pedido antes de marcarlo como entregado');
 
     await this.orders.update(orderId, { status: 'entregado' });
 
@@ -275,6 +300,36 @@ export class DeliveryGroupsService {
     return { id: orderId, status: 'entregado' };
   }
 
+  /** Crea un grupo express en estado 'waiting' y vincula las órdenes dadas. */
+  async createGroupForOrders(orderIds: string[]): Promise<DeliveryGroupEntity> {
+    const group = await this.groups.save(this.groups.create({ status: 'waiting' }));
+    for (const id of orderIds) {
+      await this.orders.update(id, { groupId: group.id });
+    }
+    this.logger.log(`Express group ${group.id} creado con ${orderIds.length} orden(es)`);
+    return group;
+  }
+
+  /**
+   * Activa el grupo en cuanto el PRIMER restaurante marca 'listo'.
+   * El rider puede salir ya hacia ese restaurante mientras el segundo sigue preparando.
+   * Solo actúa si el grupo sigue en 'waiting' para evitar actualizaciones duplicadas.
+   */
+  async checkAndActivateGroup(groupId: string): Promise<void> {
+    const group = await this.groups.findOne({ where: { id: groupId } });
+    if (!group || group.status !== 'waiting') return;
+
+    const [{ count }] = await this.dataSource.query(
+      `SELECT COUNT(*) AS count FROM orders WHERE group_id = $1 AND status = 'listo'`,
+      [groupId],
+    );
+    if (Number(count) >= 1) {
+      const total = await this.orders.count({ where: { groupId } });
+      await this.groups.update(groupId, { status: 'available' });
+      this.logger.log(`Grupo ${groupId} activado: ${count}/${total} restaurantes listos`);
+    }
+  }
+
   async markOrderReady(orderId: string) {
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
@@ -282,6 +337,10 @@ export class DeliveryGroupsService {
       throw new ForbiddenException(`No se puede marcar como listo desde estado '${order.status}'`);
     }
     await this.orders.update(orderId, { status: 'listo' });
+    if (order.groupId) {
+      await this.checkAndActivateGroup(order.groupId);
+      return { id: orderId, status: 'listo', groupsCreated: 0 };
+    }
     const newGroups = await this.tryGroupOrders();
     return { id: orderId, status: 'listo', groupsCreated: newGroups.length };
   }

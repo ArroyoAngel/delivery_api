@@ -14,9 +14,9 @@ export class AccountsAndProfiles1742500000002 implements MigrationInterface {
       { email: 'admin.fogon@yayaeats.com',    password: 'admin123',  roles: '{admin}' },
       { email: 'admin.casona@yayaeats.com',   password: 'admin123',  roles: '{admin}' },
       { email: 'admin.sushi@yayaeats.com',    password: 'admin123',  roles: '{admin}' },
-      { email: 'rider1@yayaeats.com',         password: 'rider123',  roles: '{rider}' },
-      { email: 'rider2@yayaeats.com',         password: 'rider123',  roles: '{rider}' },
-      { email: 'rider3@yayaeats.com',         password: 'rider123',  roles: '{rider}' },
+      { email: 'rider1@yayaeats.com',         password: 'rider123',  roles: '{rider,client}' },
+      { email: 'rider2@yayaeats.com',         password: 'rider123',  roles: '{rider,client}' },
+      { email: 'rider3@yayaeats.com',         password: 'rider123',  roles: '{rider,client}' },
       { email: 'ana.garcia@gmail.com',        password: 'client123', roles: '{client}' },
       { email: 'carlos.mendez@gmail.com',     password: 'client123', roles: '{client}' },
       { email: 'sofia.vargas@gmail.com',      password: 'client123', roles: '{client}' },
@@ -92,7 +92,11 @@ export class AccountsAndProfiles1742500000002 implements MigrationInterface {
     }
 
     // ── clients ───────────────────────────────────────────────────────────
+    // Los riders también tienen rol client: pueden ordenar comida.
     const clientEmails = [
+      'rider1@yayaeats.com',
+      'rider2@yayaeats.com',
+      'rider3@yayaeats.com',
       'ana.garcia@gmail.com',
       'carlos.mendez@gmail.com',
       'sofia.vargas@gmail.com',

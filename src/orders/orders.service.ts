@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { OrderEntity } from './entities/order.entity';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { CreateOrderDto, ExpressCheckoutDto } from './dto/create-order.dto';
 import { DeliveryGroupsService } from '../delivery-groups/delivery-groups.service';
 
 @Injectable()
@@ -216,14 +216,110 @@ export class OrdersService {
     return { restaurant: restaurant.name, orders };
   }
 
+  async expressCheckout(userId: string, dto: ExpressCheckoutDto) {
+    const orderIds: string[] = [];
+    let grandTotal = 0;
+    const createdOrders: OrderEntity[] = [];
+
+    for (const restaurantOrder of dto.orders) {
+      const saved = await this.dataSource.transaction(async (em) => {
+        let subtotal = 0;
+        let orderSize = 0;
+        const validatedItems: { menuItemId: string; quantity: number; unitPrice: number; notes?: string }[] = [];
+
+        for (const item of restaurantOrder.items) {
+          const rows = await em.query(
+            'SELECT id, price, is_available, COALESCE(size, 1) AS size, stock, daily_limit, daily_sold FROM menu_items WHERE id = $1',
+            [item.menuItemId],
+          );
+          if (!rows.length) throw new NotFoundException(`Item ${item.menuItemId} no encontrado`);
+          const mi = rows[0];
+          if (!mi.is_available) throw new BadRequestException(`Item no disponible`);
+          if (mi.stock !== null && Number(mi.stock) < item.quantity)
+            throw new BadRequestException(`Stock insuficiente para el item`);
+          if (mi.daily_limit !== null && Number(mi.daily_limit) - Number(mi.daily_sold ?? 0) < item.quantity)
+            throw new BadRequestException(`Límite diario alcanzado para el item`);
+          const unitPrice = Number(mi.price);
+          subtotal += unitPrice * item.quantity;
+          orderSize += Number(mi.size) * item.quantity;
+          validatedItems.push({ menuItemId: item.menuItemId, quantity: item.quantity, unitPrice, notes: item.notes });
+        }
+
+        const restaurants = await em.query('SELECT delivery_fee FROM restaurants WHERE id = $1', [restaurantOrder.restaurantId]);
+        if (!restaurants.length) throw new NotFoundException('Restaurante no encontrado');
+        const deliveryFee = Number(restaurants[0].delivery_fee) * 2; // express = ×2
+        const total = subtotal + deliveryFee;
+
+        const order = em.create(OrderEntity, {
+          clientId: userId,
+          restaurantId: restaurantOrder.restaurantId,
+          status: 'pendiente',
+          deliveryType: 'express',
+          deliveryAddress: dto.deliveryAddress,
+          deliveryLat: dto.deliveryLat,
+          deliveryLng: dto.deliveryLng,
+          deliveryFee,
+          total,
+          orderSize,
+          notes: restaurantOrder.notes,
+        });
+        const s = await em.save(OrderEntity, order);
+        for (const item of validatedItems) {
+          await em.query(
+            'INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price, notes) VALUES ($1,$2,$3,$4,$5)',
+            [s.id, item.menuItemId, item.quantity, item.unitPrice, item.notes ?? null],
+          );
+          await em.query(
+            `UPDATE menu_items SET
+              stock       = CASE WHEN stock IS NOT NULL THEN stock - $2 ELSE stock END,
+              daily_sold  = daily_sold + $2,
+              is_available = CASE
+                WHEN stock IS NOT NULL AND (stock - $2) <= 0 THEN false
+                WHEN daily_limit IS NOT NULL AND (daily_sold + $2) >= daily_limit THEN false
+                ELSE is_available
+              END
+            WHERE id = $1`,
+            [item.menuItemId, item.quantity],
+          );
+        }
+        return s;
+      });
+      orderIds.push(saved.id);
+      grandTotal += Number(saved.total);
+      createdOrders.push(saved);
+    }
+
+    const group = await this.deliveryGroups.createGroupForOrders(orderIds);
+    return { groupId: group.id, total: grandTotal, orders: createdOrders };
+  }
+
+  async confirmGroupPayment(groupId: string, paidAmount?: number) {
+    const orders = await this.orders.find({ where: { groupId } });
+    if (!orders.length) throw new NotFoundException('Grupo no encontrado o sin órdenes');
+    const groupTotal = orders.reduce((s, o) => s + Number(o.total), 0);
+    if (paidAmount !== undefined && paidAmount < groupTotal) {
+      throw new BadRequestException(
+        `Monto insuficiente: se requieren Bs ${groupTotal.toFixed(2)}, recibido Bs ${paidAmount}`,
+      );
+    }
+    const unpaid = orders.filter((o) => !['cancelado', 'entregado', 'confirmado'].includes(o.status));
+    for (const o of unpaid) {
+      await this.orders.update(o.id, { status: 'confirmado' });
+    }
+    return { groupId, status: 'confirmado', total: groupTotal, orderCount: orders.length };
+  }
+
   async updateStatus(orderId: string, status: string) {
     const allowed = ['pendiente', 'confirmado', 'preparando', 'listo', 'en_camino', 'entregado', 'cancelado'];
     if (!allowed.includes(status)) throw new BadRequestException(`Estado inválido: ${status}`);
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     await this.orders.update(orderId, { status });
-    // Si se marca como listo, intentar armar grupo automáticamente
     if (status === 'listo') {
+      if (order.groupId) {
+        await this.deliveryGroups.checkAndActivateGroup(order.groupId);
+        return { id: orderId, status, groupsCreated: 0 };
+      }
       const newGroups = await this.deliveryGroups.tryGroupOrders();
       return { id: orderId, status, groupsCreated: newGroups.length };
     }

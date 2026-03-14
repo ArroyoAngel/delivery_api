@@ -16,5 +16,24 @@ export class CreateOrderDto {
   @ApiProperty({ required: false, enum: ['delivery', 'recogida', 'express'] })
   @IsOptional() @IsEnum(['delivery', 'recogida', 'express']) deliveryType?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() deliveryAddress?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() deliveryLat?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() deliveryLng?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
+}
+
+export class ExpressRestaurantOrderDto {
+  @ApiProperty() @IsString() restaurantId: string;
+  @ApiProperty({ type: [OrderItemDto] })
+  @IsArray() @ValidateNested({ each: true }) @Type(() => OrderItemDto)
+  items: OrderItemDto[];
+  @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
+}
+
+export class ExpressCheckoutDto {
+  @ApiProperty({ type: [ExpressRestaurantOrderDto] })
+  @IsArray() @ValidateNested({ each: true }) @Type(() => ExpressRestaurantOrderDto)
+  orders: ExpressRestaurantOrderDto[];
+  @ApiProperty({ required: false }) @IsOptional() @IsString() deliveryAddress?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() deliveryLat?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() deliveryLng?: number;
 }
