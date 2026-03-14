@@ -4,6 +4,7 @@ import { Repository, DataSource } from 'typeorm';
 import { OrderEntity } from './entities/order.entity';
 import { CreateOrderDto, ExpressCheckoutDto } from './dto/create-order.dto';
 import { DeliveryGroupsService } from '../delivery-groups/delivery-groups.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class OrdersService {
@@ -11,6 +12,7 @@ export class OrdersService {
     @InjectRepository(OrderEntity) private orders: Repository<OrderEntity>,
     private dataSource: DataSource,
     private deliveryGroups: DeliveryGroupsService,
+    private notifications: NotificationsService,
   ) {}
 
   async findMyOrders(userId: string) {
@@ -76,7 +78,7 @@ export class OrdersService {
   }
 
   async create(userId: string, dto: CreateOrderDto) {
-    return this.dataSource.transaction(async (em) => {
+    const saved = await this.dataSource.transaction(async (em) => {
       let subtotal = 0;
       const validatedItems: { menuItemId: string; quantity: number; unitPrice: number; notes?: string }[] = [];
 
@@ -107,7 +109,8 @@ export class OrdersService {
       const restaurants = await em.query('SELECT delivery_fee FROM restaurants WHERE id = $1', [dto.restaurantId]);
       if (!restaurants.length) throw new NotFoundException('Restaurante no encontrado');
       const deliveryType = dto.deliveryType ?? 'delivery';
-      const deliveryFee = deliveryType === 'recogida' ? 0 : Number(restaurants[0].delivery_fee);
+      const baseFee = deliveryType === 'recogida' ? 0 : Number(restaurants[0].delivery_fee);
+      const deliveryFee = deliveryType === 'express' ? baseFee * 2 : baseFee;
       const total = subtotal + deliveryFee;
 
       // Si es delivery y no se envió dirección, usar la dirección principal del cliente
@@ -165,6 +168,12 @@ export class OrdersService {
       }
       return saved;
     });
+
+    if (saved.deliveryType === 'express') {
+      await this.deliveryGroups.createGroupForOrders([saved.id]);
+    }
+
+    return saved;
   }
 
   async findRestaurantOrders(ownerId: string) {
@@ -305,6 +314,7 @@ export class OrdersService {
     const unpaid = orders.filter((o) => !['cancelado', 'entregado', 'confirmado'].includes(o.status));
     for (const o of unpaid) {
       await this.orders.update(o.id, { status: 'confirmado' });
+      this.notifications.notifyRestaurantNewOrder(o.restaurantId, o.id).catch(() => null);
     }
     return { groupId, status: 'confirmado', total: groupTotal, orderCount: orders.length };
   }
@@ -348,6 +358,7 @@ export class OrdersService {
       );
     }
     await this.orders.update(orderId, { status: 'confirmado' });
+    this.notifications.notifyRestaurantNewOrder(order.restaurantId, orderId).catch(() => null);
     return { id: orderId, status: 'confirmado', paidAt: new Date().toISOString(), total: order.total };
   }
 

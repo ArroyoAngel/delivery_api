@@ -5,6 +5,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { DeliveryGroupEntity } from './entities/delivery-group.entity';
 import { OrderEntity } from '../orders/entities/order.entity';
 import { SystemConfigService } from '../system-config/system-config.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // Fórmula Haversine: distancia en metros entre dos coordenadas
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -27,6 +28,7 @@ export class DeliveryGroupsService {
     @InjectRepository(OrderEntity) private orders: Repository<OrderEntity>,
     private dataSource: DataSource,
     private cfg: SystemConfigService,
+    private notifications: NotificationsService,
   ) {}
 
   async getLocationIntervalSeconds(): Promise<number> {
@@ -259,6 +261,7 @@ export class DeliveryGroupsService {
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (order.status !== 'listo') throw new ForbiddenException(`El pedido aún no está listo para recoger (estado: ${order.status})`);
     await this.orders.update(orderId, { status: 'en_camino' });
+    this.notifications.notifyClientOrderStatus(order.clientId, 'en_camino').catch(() => null);
     return { id: orderId, status: 'en_camino' };
   }
 
@@ -269,6 +272,7 @@ export class DeliveryGroupsService {
       throw new ForbiddenException(`No se puede pasar a preparando desde '${order.status}'`);
     }
     await this.orders.update(orderId, { status: 'preparando' });
+    this.notifications.notifyClientOrderStatus(order.clientId, 'preparando').catch(() => null);
     return { id: orderId, status: 'preparando' };
   }
 
@@ -279,7 +283,9 @@ export class DeliveryGroupsService {
     if (order.status === 'entregado') return { message: 'Ya entregado' };
     if (order.status !== 'en_camino') throw new ForbiddenException('Debés recoger el pedido antes de marcarlo como entregado');
 
+
     await this.orders.update(orderId, { status: 'entregado' });
+    this.notifications.notifyClientOrderStatus(order.clientId, 'entregado').catch(() => null);
 
     // Verificar si todos los pedidos del grupo están entregados
     if (order.groupId) {
@@ -327,6 +333,7 @@ export class DeliveryGroupsService {
       const total = await this.orders.count({ where: { groupId } });
       await this.groups.update(groupId, { status: 'available' });
       this.logger.log(`Grupo ${groupId} activado: ${count}/${total} restaurantes listos`);
+      this.notifications.notifyRidersGroupAvailable(groupId, Number(count)).catch(() => null);
     }
   }
 
@@ -337,11 +344,15 @@ export class DeliveryGroupsService {
       throw new ForbiddenException(`No se puede marcar como listo desde estado '${order.status}'`);
     }
     await this.orders.update(orderId, { status: 'listo' });
+    this.notifications.notifyClientOrderStatus(order.clientId, 'listo').catch(() => null);
     if (order.groupId) {
       await this.checkAndActivateGroup(order.groupId);
       return { id: orderId, status: 'listo', groupsCreated: 0 };
     }
     const newGroups = await this.tryGroupOrders();
+    if (newGroups.length > 0) {
+      this.notifications.notifyRidersGroupAvailable(newGroups[0].id, 1).catch(() => null);
+    }
     return { id: orderId, status: 'listo', groupsCreated: newGroups.length };
   }
 

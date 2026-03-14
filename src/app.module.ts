@@ -12,6 +12,7 @@ import { AiModule } from './ai/ai.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
 import { AuthorizationModule } from './authorization/authorization.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { AuthZModule, AUTHZ_ENFORCER } from 'nest-authz';
 import TypeORMAdapter from 'typeorm-adapter';
 import { newEnforcer, newModel } from 'casbin';
@@ -87,6 +88,7 @@ m = r.sub == p.sub && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act) && p.e
     AiModule,
     UsersModule,
     RolesModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

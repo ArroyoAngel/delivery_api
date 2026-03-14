@@ -6,9 +6,10 @@ import { OrdersService } from './orders.service';
 import { OrderEntity } from './entities/order.entity';
 import { AuthModule } from '../auth/auth.module';
 import { DeliveryGroupsModule } from '../delivery-groups/delivery-groups.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([OrderEntity]), AuthModule, DeliveryGroupsModule],
+  imports: [TypeOrmModule.forFeature([OrderEntity]), AuthModule, DeliveryGroupsModule, NotificationsModule],
   controllers: [OrdersController, PaymentsController],
   providers: [OrdersService],
 })

@@ -6,12 +6,14 @@ import { DeliveryGroupsService } from './delivery-groups.service';
 import { DeliveryGroupsController } from './delivery-groups.controller';
 import { AuthModule } from '../auth/auth.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([DeliveryGroupEntity, OrderEntity]),
     AuthModule,
     SystemConfigModule,
+    NotificationsModule,
   ],
   controllers: [DeliveryGroupsController],
   providers: [DeliveryGroupsService],
