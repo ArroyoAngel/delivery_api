@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { DeviceTokenEntity } from './device-token.entity';
+import { NotificationEntity } from './notification.entity';
 import * as admin from 'firebase-admin';
 
 @Injectable()
@@ -12,6 +13,8 @@ export class NotificationsService implements OnModuleInit {
   constructor(
     @InjectRepository(DeviceTokenEntity)
     private tokens: Repository<DeviceTokenEntity>,
+    @InjectRepository(NotificationEntity)
+    private notifRepo: Repository<NotificationEntity>,
     private dataSource: DataSource,
   ) {}
 
@@ -54,6 +57,30 @@ export class NotificationsService implements OnModuleInit {
     await this.tokens.delete({ userId });
   }
 
+  // ── Notification history ──────────────────────────────────────────────────
+
+  async getUserNotifications(userId: string, limit = 30, onlyUnread = false) {
+    const qb = this.notifRepo
+      .createQueryBuilder('n')
+      .where('n.userId = :userId', { userId })
+      .orderBy('n.createdAt', 'DESC')
+      .take(limit);
+    if (onlyUnread) qb.andWhere('n.isRead = false');
+    return qb.getMany();
+  }
+
+  async getUnreadCount(userId: string): Promise<number> {
+    return this.notifRepo.count({ where: { userId, isRead: false } });
+  }
+
+  async markRead(id: string, userId: string) {
+    await this.notifRepo.update({ id, userId }, { isRead: true });
+  }
+
+  async markAllRead(userId: string) {
+    await this.notifRepo.update({ userId, isRead: false }, { isRead: true });
+  }
+
   // ── Send helpers ──────────────────────────────────────────────────────────
 
   async sendToUser(userId: string, notification: { title: string; body: string }, data?: Record<string, string>) {
@@ -87,18 +114,16 @@ export class NotificationsService implements OnModuleInit {
       [restaurantId],
     );
     const ownerIds = rows.map((r) => r.owner_account_id).filter(Boolean);
-    await this.sendToUsers(ownerIds, {
+    const notification = {
       title: '🔔 Nuevo pedido',
       body: 'Tienes un nuevo pedido esperando confirmación.',
-    }, { orderId, type: 'new_order' });
+    };
+    await this._saveForUsers(ownerIds, notification, 'new_order', { orderId });
+    await this.sendToUsers(ownerIds, notification, { orderId, type: 'new_order' });
   }
 
   /** Notifica al cliente sobre el cambio de estado de su pedido */
-  async notifyClientOrderStatus(
-    clientId: string,
-    status: string,
-    restaurantName = '',
-  ) {
+  async notifyClientOrderStatus(clientId: string, status: string, restaurantName = '') {
     const messages: Record<string, { title: string; body: string }> = {
       preparando: {
         title: '🍳 Preparando tu pedido',
@@ -120,18 +145,38 @@ export class NotificationsService implements OnModuleInit {
 
     const n = messages[status];
     if (!n) return;
+    await this._saveForUsers([clientId], n, 'order_status', { status });
     await this.sendToUser(clientId, n, { type: 'order_status', status });
   }
 
   /** Notifica a todos los riders disponibles que hay un grupo listo */
   async notifyRidersGroupAvailable(groupId: string, orderCount: number) {
-    await this.sendToAllRiders({
+    const notification = {
       title: '📦 Nueva entrega disponible',
       body: `Hay ${orderCount} pedido${orderCount !== 1 ? 's' : ''} listo${orderCount !== 1 ? 's' : ''} para recoger.`,
-    }, { groupId, type: 'group_available' });
+    };
+    const rows: { account_id: string }[] = await this.dataSource.query(
+      `SELECT p.account_id FROM riders r JOIN profiles p ON p.id = r.profile_id`,
+    );
+    const riderIds = rows.map((r) => r.account_id);
+    await this._saveForUsers(riderIds, notification, 'group_available', { groupId });
+    await this.sendToAllRiders(notification, { groupId, type: 'group_available' });
   }
 
-  // ── Internal FCM send ──────────────────────────────────────────────────
+  // ── Internal helpers ───────────────────────────────────────────────────
+
+  private async _saveForUsers(
+    userIds: string[],
+    notification: { title: string; body: string },
+    type: string,
+    data?: Record<string, unknown>,
+  ) {
+    if (!userIds.length) return;
+    const records = userIds.map((userId) =>
+      this.notifRepo.create({ userId, title: notification.title, body: notification.body, type, data }),
+    );
+    await this.notifRepo.save(records);
+  }
 
   private async _sendToTokens(
     tokens: string[],
