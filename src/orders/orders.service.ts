@@ -115,8 +115,8 @@ export class OrdersService {
 
       // Si es delivery y no se envió dirección, usar la dirección principal del cliente
       let deliveryAddress = dto.deliveryAddress ?? undefined;
-      let deliveryLat: number | undefined = undefined;
-      let deliveryLng: number | undefined = undefined;
+      let deliveryLat: number | undefined = dto.deliveryLat ?? undefined;
+      let deliveryLng: number | undefined = dto.deliveryLng ?? undefined;
       if (deliveryType !== 'recogida' && !deliveryAddress) {
         const [defaultAddr] = await em.query(
           `SELECT street, number, floor, latitude, longitude FROM user_addresses
