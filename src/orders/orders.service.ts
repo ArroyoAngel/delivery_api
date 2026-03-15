@@ -339,7 +339,7 @@ export class OrdersService {
   async cancelOrder(userId: string, orderId: string) {
     const order = await this.orders.findOne({ where: { id: orderId, clientId: userId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
-    if (['entregado', 'cancelado'].includes(order.status)) {
+    if (order.status !== 'pendiente') {
       throw new ForbiddenException(`No se puede cancelar una orden con estado '${order.status}'`);
     }
     await this.orders.update(orderId, { status: 'cancelado' });

@@ -1,98 +1,193 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# YaYa Eats — API (NestJS)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend REST API del sistema de delivery. Corre en el puerto `3002`.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## Requisitos
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- Node.js 20+
+- Docker Desktop
+- PostgreSQL (via Docker)
 
-## Project setup
+---
+
+## Desarrollo local
+
+### 1. Variables de entorno
+
+Copia el ejemplo y ajusta si es necesario:
 
 ```bash
-$ npm install
+cp .env.example .env
 ```
 
-## Compile and run the project
+Valores clave para local:
+
+```env
+NODE_ENV=development
+PORT=3002
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=delivery
+DB_USER=arroyo
+DB_PASSWORD=arroyo1234
+```
+
+### 2. Levantar la base de datos
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+# Desde la raiz del proyecto (donde esta docker-compose.yml)
+docker compose up postgres -d
 ```
 
-## Run tests
+### 3. Correr el API
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+cd delivery_api
+npm install
+npm run start:dev
 ```
 
-## Deployment
+El API estara disponible en `http://localhost:3002/api`.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+> **Nota:** En modo `development` las migraciones NO corren automaticamente.
+> La base de datos se inicializa con `db/init.sql` al crear el contenedor de Postgres.
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+---
+
+## Deploy a QA (yaya.work)
+
+El servidor QA es `85.31.62.55`. El API corre en Docker en `/opt/yaya-eats/`.
+
+### Proceso de deploy
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# 1. Subir cambios al repositorio
+git add .
+git commit -m "descripcion del cambio"
+git push origin master
+
+# 2. Conectarse al servidor por SSH
+ssh root@85.31.62.55
+
+# 3. En el servidor: actualizar codigo
+cd /opt/yaya-eats/delivery_api
+git pull origin master
+# 3.1 si ocurre un catch debido a conflictos:
+git checkout -- src/app.module.ts
+git pull origin master
+
+
+# 4. Rebuild y reiniciar solo el contenedor del API
+cd /opt/yaya-eats
+docker compose build api
+docker compose up -d api
+
+# 5. Verificar logs
+docker compose logs api --tail=50
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Verificar que funciona
 
-## Resources
+```bash
+curl https://api.yaya.work/api/restaurants
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+### Variables de entorno en QA
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Las variables de entorno del API en QA se definen directamente en el `docker-compose.yml` del servidor. Para cambiarlas:
 
-## Support
+```bash
+nano /opt/yaya-eats/docker-compose.yml
+docker compose up -d api
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+---
 
-## Stay in touch
+## Migraciones
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Las migraciones corren **automaticamente** al iniciar el contenedor en produccion (`NODE_ENV=production`).
 
-## License
+Para crear una nueva migracion:
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```bash
+npm run migration:generate -- database/migrations/NombreMigracion
+npm run build
+```
+
+---
+
+## Estructura de puertos
+
+| Entorno | URL |
+|---------|-----|
+| Local   | `http://localhost:3002/api` |
+| QA      | `https://api.yaya.work/api` |
+
+---
+
+## Conectarse a la base de datos de QA
+
+La base de datos no expone su puerto al exterior por seguridad. Se accede mediante un **tunel SSH**.
+
+### Crear el tunel SSH
+
+```bash
+# En tu maquina local — abre el tunel en background
+ssh -L 5433:localhost:5432 root@85.31.62.55 -N
+```
+
+Esto mapea el puerto `5433` de tu PC al `5432` del servidor.
+Deja esa terminal abierta mientras trabajas.
+
+### Conectarse con psql
+
+```bash
+psql -h localhost -p 5433 -U arroyo -d delivery
+```
+
+### Conectarse desde DBeaver / TablePlus / DataGrip
+
+| Campo    | Valor        |
+|----------|--------------|
+| Host     | `localhost`  |
+| Port     | `5433`       |
+| Database | `delivery`   |
+| User     | `arroyo`     |
+| Password | `arroyo1234` |
+
+### Desde el servidor directamente (sin tunel)
+
+```bash
+ssh root@85.31.62.55
+cd /opt/yaya-eats
+docker compose exec postgres psql -U arroyo -d delivery
+```
+
+---
+
+## Consultas utiles en psql
+
+```sql
+-- Ver todas las tablas
+\dt
+
+-- Ver usuarios registrados
+SELECT id, email, roles, created_at FROM users ORDER BY created_at DESC LIMIT 10;
+
+-- Ver pedidos recientes
+SELECT id, status, delivery_type, total, created_at FROM orders ORDER BY created_at DESC LIMIT 10;
+
+-- Ver riders
+SELECT id, user_id, status, created_at FROM riders ORDER BY created_at DESC;
+
+-- Ver reglas de Casbin (permisos)
+SELECT * FROM casbin_rule ORDER BY ptype, v0;
+
+-- Ver migraciones ejecutadas
+SELECT * FROM migrations ORDER BY timestamp DESC;
+
+-- Salir de psql
+\q
+```
