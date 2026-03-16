@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -92,5 +94,7 @@ m = r.sub == p.sub && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act) && p.e
     PaymentsModule,
     NotificationsModule,
   ],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}
