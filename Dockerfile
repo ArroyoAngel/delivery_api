@@ -12,6 +12,6 @@ COPY package*.json ./
 RUN npm ci --legacy-peer-deps
 COPY --from=builder /app/dist ./dist
 COPY database ./database
-COPY ormconfig.ts ormconfig-seed.ts tsconfig.typeorm.json ./
+COPY tsconfig.json tsconfig.typeorm.json ormconfig.ts ormconfig-seed.ts ./
 EXPOSE 3002
 CMD ["sh", "-c", "npm run setup && node dist/src/main.js"]
