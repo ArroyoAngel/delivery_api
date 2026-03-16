@@ -37,3 +37,23 @@ export class ExpressCheckoutDto {
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() deliveryLat?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() deliveryLng?: number;
 }
+
+export class CreateRestaurantLocalOrderDto {
+  @ApiProperty({ type: [OrderItemDto] })
+  @IsArray() @ValidateNested({ each: true }) @Type(() => OrderItemDto)
+  items: OrderItemDto[];
+
+  @ApiProperty({ enum: ['local', 'recogida'], required: false })
+  @IsOptional() @IsEnum(['local', 'recogida']) serviceType?: 'local' | 'recogida';
+
+  @ApiProperty({ required: false }) @IsOptional() @IsString() areaId?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() areaLabel?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
+}
+
+export class CreateRestaurantServiceAreaDto {
+  @ApiProperty() @IsString() name: string;
+  @ApiProperty({ required: false, enum: ['mesa', 'barra', 'salon', 'terraza'] })
+  @IsOptional() @IsEnum(['mesa', 'barra', 'salon', 'terraza']) kind?: 'mesa' | 'barra' | 'salon' | 'terraza';
+  @ApiProperty({ required: false }) @IsOptional() @IsString() color?: string;
+}

@@ -1,7 +1,12 @@
 import { Controller, Get, Post, Put, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto, ExpressCheckoutDto } from './dto/create-order.dto';
+import {
+  CreateOrderDto,
+  ExpressCheckoutDto,
+  CreateRestaurantLocalOrderDto,
+  CreateRestaurantServiceAreaDto,
+} from './dto/create-order.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CasbinGuard } from '../authorization/guards/casbin.guard';
 import { DeliveryGroupsService } from '../delivery-groups/delivery-groups.service';
@@ -72,6 +77,27 @@ export class OrdersController {
   @ApiOperation({ summary: 'Pedidos de mi restaurante' })
   restaurantOrders(@Request() req) {
     return this.orders.findRestaurantOrders(req.user.id);
+  }
+
+  @Get('restaurant/local/areas')
+  @UseGuards(CasbinGuard)
+  @ApiOperation({ summary: 'Áreas/mesas para servicio en local' })
+  restaurantLocalAreas(@Request() req) {
+    return this.orders.getRestaurantServiceAreas(req.user.id);
+  }
+
+  @Post('restaurant/local/areas')
+  @UseGuards(CasbinGuard)
+  @ApiOperation({ summary: 'Crear área/mesa para servicio en local' })
+  createRestaurantLocalArea(@Request() req, @Body() dto: CreateRestaurantServiceAreaDto) {
+    return this.orders.createRestaurantServiceArea(req.user.id, dto);
+  }
+
+  @Post('restaurant/local/cash')
+  @UseGuards(CasbinGuard)
+  @ApiOperation({ summary: 'Registrar orden local/recogida pagada en efectivo (estado confirmado)' })
+  createRestaurantLocalCashOrder(@Request() req, @Body() dto: CreateRestaurantLocalOrderDto) {
+    return this.orders.createRestaurantLocalCashOrder(req.user.id, dto);
   }
 
   // ── Estado: confirmado → preparando (admin/restaurante) ──────────────────

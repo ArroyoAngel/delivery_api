@@ -2,7 +2,12 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { OrderEntity } from './entities/order.entity';
-import { CreateOrderDto, ExpressCheckoutDto } from './dto/create-order.dto';
+import {
+  CreateOrderDto,
+  ExpressCheckoutDto,
+  CreateRestaurantLocalOrderDto,
+  CreateRestaurantServiceAreaDto,
+} from './dto/create-order.dto';
 import { DeliveryGroupsService } from '../delivery-groups/delivery-groups.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SystemConfigService } from '../system-config/system-config.service';
@@ -17,9 +22,59 @@ export class OrdersService {
     private cfg: SystemConfigService,
   ) {}
 
+  private readonly effectiveStatuses = ['confirmado', 'preparando', 'listo', 'en_camino', 'entregado'];
+
   private buildPaymentReference(scope: 'order' | 'group', id: string): string {
     const prefix = scope === 'group' ? 'GRP' : 'ORD';
     return `${prefix}_${id.replace(/-/g, '').toUpperCase()}`;
+  }
+
+  private async resolveRestaurantForAccount(accountId: string): Promise<{ id: string; name: string }> {
+    let [restaurant] = await this.dataSource.query(
+      `SELECT id, name
+       FROM restaurants
+       WHERE owner_account_id = $1
+       LIMIT 1`,
+      [accountId],
+    );
+
+    if (!restaurant) {
+      [restaurant] = await this.dataSource.query(
+        `SELECT r.id, r.name
+         FROM restaurants r
+         JOIN admins a ON a.restaurant_id = r.id
+         JOIN profiles p ON p.id = a.profile_id
+         WHERE p.account_id = $1
+         LIMIT 1`,
+        [accountId],
+      );
+    }
+
+    if (!restaurant) throw new NotFoundException('No tenés un restaurante asignado');
+    return restaurant;
+  }
+
+  private async ensureDefaultServiceAreas(restaurantId: string): Promise<void> {
+    const [existing] = await this.dataSource.query(
+      `SELECT 1 FROM restaurant_service_areas WHERE restaurant_id = $1 LIMIT 1`,
+      [restaurantId],
+    );
+    if (existing) return;
+
+    const defaults: Array<[string, string, string, number]> = [
+      ['Mesas salón', 'mesa', '#f97316', 1],
+      ['Barra', 'barra', '#0ea5e9', 2],
+      ['Terraza', 'terraza', '#22c55e', 3],
+      ['Recojo en tienda', 'salon', '#a855f7', 4],
+    ];
+
+    for (const [name, kind, color, sortOrder] of defaults) {
+      await this.dataSource.query(
+        `INSERT INTO restaurant_service_areas (restaurant_id, name, kind, color, sort_order)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [restaurantId, name, kind, color, sortOrder],
+      );
+    }
   }
 
   private async getPlatformServiceFee(): Promise<number> {
@@ -307,6 +362,160 @@ export class OrdersService {
     );
 
     return { restaurant: restaurant.name, orders };
+  }
+
+  async getRestaurantServiceAreas(accountId: string) {
+    const restaurant = await this.resolveRestaurantForAccount(accountId);
+    await this.ensureDefaultServiceAreas(restaurant.id);
+
+    return this.dataSource.query(
+      `SELECT id, restaurant_id AS "restaurantId", name, kind, color, sort_order AS "sortOrder", is_active AS "isActive"
+       FROM restaurant_service_areas
+       WHERE restaurant_id = $1
+       ORDER BY sort_order, created_at`,
+      [restaurant.id],
+    );
+  }
+
+  async createRestaurantServiceArea(accountId: string, dto: CreateRestaurantServiceAreaDto) {
+    const restaurant = await this.resolveRestaurantForAccount(accountId);
+
+    const [row] = await this.dataSource.query(
+      `INSERT INTO restaurant_service_areas (restaurant_id, name, kind, color, sort_order)
+       VALUES (
+         $1,
+         $2,
+         COALESCE($3, 'mesa'),
+         COALESCE($4, '#f97316'),
+         (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM restaurant_service_areas WHERE restaurant_id = $1)
+       )
+       RETURNING id, restaurant_id AS "restaurantId", name, kind, color, sort_order AS "sortOrder", is_active AS "isActive"`,
+      [restaurant.id, dto.name, dto.kind ?? null, dto.color ?? null],
+    );
+
+    return row;
+  }
+
+  async createRestaurantLocalCashOrder(accountId: string, dto: CreateRestaurantLocalOrderDto) {
+    if (!dto.items?.length) throw new BadRequestException('Debes incluir al menos un item');
+
+    const restaurant = await this.resolveRestaurantForAccount(accountId);
+
+    const saved = await this.dataSource.transaction(async (em) => {
+      let subtotal = 0;
+      let orderSize = 0;
+      const validatedItems: { menuItemId: string; quantity: number; unitPrice: number; notes?: string }[] = [];
+
+      for (const item of dto.items) {
+        const rows = await em.query(
+          `SELECT id, price, is_available, COALESCE(size, 1) AS size, stock, daily_limit, daily_sold
+           FROM menu_items
+           WHERE id = $1 AND restaurant_id = $2`,
+          [item.menuItemId, restaurant.id],
+        );
+        if (!rows.length) throw new NotFoundException(`Item ${item.menuItemId} no encontrado en tu restaurante`);
+
+        const mi = rows[0];
+        if (!mi.is_available) throw new BadRequestException('Item no disponible');
+        if (mi.stock !== null && mi.stock !== undefined && Number(mi.stock) < item.quantity) {
+          throw new BadRequestException('Stock insuficiente para el item');
+        }
+        if (mi.daily_limit !== null && mi.daily_limit !== undefined) {
+          const remaining = Number(mi.daily_limit) - Number(mi.daily_sold ?? 0);
+          if (remaining < item.quantity) throw new BadRequestException('Límite diario alcanzado para el item');
+        }
+
+        const unitPrice = Number(mi.price);
+        subtotal += unitPrice * item.quantity;
+        orderSize += Number(mi.size) * item.quantity;
+        validatedItems.push({ menuItemId: item.menuItemId, quantity: item.quantity, unitPrice, notes: item.notes });
+      }
+
+      const serviceType = dto.serviceType ?? 'local';
+      const isPickup = serviceType === 'recogida';
+      const areaText = dto.areaLabel?.trim() || 'Sin área';
+      const composedNotes = [
+        dto.notes?.trim(),
+        `Canal: ${isPickup ? 'Recojo en tienda' : 'Consumo en local'}`,
+        `Área/Mesa: ${areaText}`,
+        'Pago: Efectivo',
+      ]
+        .filter(Boolean)
+        .join(' | ');
+
+      const order = em.create(OrderEntity, {
+        clientId: accountId,
+        restaurantId: restaurant.id,
+        status: 'confirmado',
+        deliveryType: 'recogida',
+        deliveryAddress: isPickup ? 'Recojo en tienda' : `Consumo en local · ${areaText}`,
+        subtotal,
+        deliveryFee: 0,
+        platformFee: 0,
+        total: subtotal,
+        orderSize,
+        notes: composedNotes,
+      });
+
+      const persisted = await em.save(OrderEntity, order);
+
+      for (const item of validatedItems) {
+        await em.query(
+          'INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price, notes) VALUES ($1,$2,$3,$4,$5)',
+          [persisted.id, item.menuItemId, item.quantity, item.unitPrice, item.notes ?? null],
+        );
+        await em.query(
+          `UPDATE menu_items SET
+            stock       = CASE WHEN stock IS NOT NULL THEN stock - $2 ELSE stock END,
+            daily_sold  = daily_sold + $2,
+            is_available = CASE
+              WHEN stock IS NOT NULL AND (stock - $2) <= 0 THEN false
+              WHEN daily_limit IS NOT NULL AND (daily_sold + $2) >= daily_limit THEN false
+              ELSE is_available
+            END
+          WHERE id = $1`,
+          [item.menuItemId, item.quantity],
+        );
+      }
+
+      const paymentReference = `${this.buildPaymentReference('order', persisted.id)}_CASH`;
+      await em.query(
+        `INSERT INTO payments (
+          reference, scope_type, order_id, payer_account_id,
+          status, subtotal, delivery_fee, platform_fee, total_amount,
+          bank_provider, confirmed_at, metadata
+        ) VALUES (
+          $1, 'order', $2, $3,
+          'confirmed', $4, 0, 0, $4,
+          'cash', NOW(), $5::jsonb
+        )
+        ON CONFLICT (reference) DO NOTHING`,
+        [
+          paymentReference,
+          persisted.id,
+          accountId,
+          subtotal,
+          JSON.stringify({
+            channel: 'restaurant_local_cash',
+            serviceType,
+            areaId: dto.areaId ?? null,
+            areaLabel: areaText,
+          }),
+        ],
+      );
+
+      await em.update(OrderEntity, persisted.id, { paymentReference });
+
+      return { ...persisted, paymentReference };
+    });
+
+    this.notifications.notifyRestaurantNewOrder(saved.restaurantId, saved.id).catch(() => null);
+
+    return {
+      ...saved,
+      workflow: 'restaurant_local_cash',
+      effectiveStatuses: this.effectiveStatuses,
+    };
   }
 
   async expressCheckout(userId: string, dto: ExpressCheckoutDto) {

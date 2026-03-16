@@ -173,12 +173,26 @@ export class PaymentsAdminService {
 
     const [income] = await this.dataSource.query(
       `SELECT
-         COUNT(*) FILTER (WHERE o.status IN ('confirmado','preparando','listo','en_camino','entregado'))::int AS total_orders,
-         COALESCE(SUM(o.total) FILTER (WHERE o.status IN ('confirmado','preparando','listo','en_camino','entregado')), 0)::numeric AS gross_sales,
-         COALESCE(SUM(wt.amount) FILTER (WHERE wt.owner_type = 'restaurant' AND wt.entry_type = 'credit'), 0)::numeric AS net_income
-       FROM orders o
-       LEFT JOIN wallet_transactions wt ON wt.order_id = o.id
-       WHERE o.restaurant_id = $1`,
+         (
+           SELECT COUNT(*)::int
+           FROM orders o
+           WHERE o.restaurant_id = $1
+             AND o.status IN ('confirmado','preparando','listo','en_camino','entregado')
+         ) AS total_orders,
+         (
+           SELECT COALESCE(SUM(COALESCE(NULLIF(o.subtotal, 0), o.total)), 0)::numeric
+           FROM orders o
+           WHERE o.restaurant_id = $1
+             AND o.status IN ('confirmado','preparando','listo','en_camino','entregado')
+         ) AS gross_sales,
+         (
+           SELECT COALESCE(SUM(wt.amount), 0)::numeric
+           FROM wallet_transactions wt
+           JOIN orders o ON o.id = wt.order_id
+           WHERE o.restaurant_id = $1
+             AND wt.owner_type = 'restaurant'
+             AND wt.entry_type = 'credit'
+         ) AS net_income`,
       [restaurantId],
     );
 
@@ -253,12 +267,26 @@ export class PaymentsAdminService {
   async getRestaurantIncomeSummary(restaurantId: string) {
     const [income] = await this.dataSource.query(
       `SELECT
-         COUNT(*) FILTER (WHERE o.status IN ('confirmado','preparando','listo','en_camino','entregado'))::int AS total_orders,
-         COALESCE(SUM(o.total) FILTER (WHERE o.status IN ('confirmado','preparando','listo','en_camino','entregado')), 0)::numeric AS gross_sales,
-         COALESCE(SUM(wt.amount) FILTER (WHERE wt.owner_type = 'restaurant' AND wt.entry_type = 'credit'), 0)::numeric AS net_income
-       FROM orders o
-       LEFT JOIN wallet_transactions wt ON wt.order_id = o.id
-       WHERE o.restaurant_id = $1`,
+         (
+           SELECT COUNT(*)::int
+           FROM orders o
+           WHERE o.restaurant_id = $1
+             AND o.status IN ('confirmado','preparando','listo','en_camino','entregado')
+         ) AS total_orders,
+         (
+           SELECT COALESCE(SUM(COALESCE(NULLIF(o.subtotal, 0), o.total)), 0)::numeric
+           FROM orders o
+           WHERE o.restaurant_id = $1
+             AND o.status IN ('confirmado','preparando','listo','en_camino','entregado')
+         ) AS gross_sales,
+         (
+           SELECT COALESCE(SUM(wt.amount), 0)::numeric
+           FROM wallet_transactions wt
+           JOIN orders o ON o.id = wt.order_id
+           WHERE o.restaurant_id = $1
+             AND wt.owner_type = 'restaurant'
+             AND wt.entry_type = 'credit'
+         ) AS net_income`,
       [restaurantId],
     );
 
