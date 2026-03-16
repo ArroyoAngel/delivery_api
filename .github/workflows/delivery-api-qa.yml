@@ -36,28 +36,50 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/develop'
     environment: qa
+    env:
+      API_QA_PATH: /opt/yaya-eats/delivery_api
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect DB related changes
+        id: db_changes
+        run: |
+          set -e
+          BASE_SHA=""
+          if [ "${{ github.event_name }}" = "push" ] && [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            BASE_SHA="${{ github.event.before }}"
+          else
+            BASE_SHA="$(git rev-parse HEAD~1 2>/dev/null || true)"
+          fi
+
+          if [ -z "$BASE_SHA" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "${{ github.sha }}")"
+          echo "$CHANGED_FILES"
+
+          if echo "$CHANGED_FILES" | grep -Eq '^(migrations/|src/.+\.entity\.ts$|ormconfig.*\.ts$)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          if [ -n "${{ secrets.VPS_SSH_KEY_B64 }}" ]; then
-            printf '%s' "${{ secrets.VPS_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/deploy_key || {
-              echo "VPS_SSH_KEY_B64 is not valid Base64."
-              exit 1
-            }
-          else
-            printf '%s' "${{ secrets.VPS_SSH_KEY }}" | tr -d '\r' > ~/.ssh/deploy_key
-          fi
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           grep -q "BEGIN OPENSSH PRIVATE KEY" ~/.ssh/deploy_key || {
-            echo "Decoded SSH key is not an OpenSSH private key. Check VPS_SSH_KEY_B64 or VPS_SSH_KEY."
+            echo "Decoded SSH key is not an OpenSSH private key. Check VPS_SSH_KEY."
             exit 1
           }
           ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null || {
-            echo "SSH private key could not be parsed. Check VPS_SSH_KEY_B64 or VPS_SSH_KEY."
+            echo "SSH private key could not be parsed. Check VPS_SSH_KEY."
             exit 1
           }
           [ -n "${{ secrets.VPS_HOST }}" ] || {
@@ -82,15 +104,28 @@ jobs:
             --exclude "node_modules" \
             --exclude "dist" \
             ./ \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.API_QA_PATH }}/"
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${API_QA_PATH}/"
 
-      - name: Deploy + migrate on VPS
+      - name: Deploy on VPS
         run: |
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" << 'EOF'
           set -e
-          cd "${{ secrets.API_QA_PATH }}"
-          ${{ secrets.API_QA_DEPLOY_COMMAND }}
-          ${{ secrets.API_QA_MIGRATE_COMMAND }}
+          test -f /opt/yaya-eats/.env || {
+            echo "Missing /opt/yaya-eats/.env on VPS. Create it manually on server."
+            exit 1
+          }
+          cd /opt/yaya-eats
+          docker compose build api
+          docker compose up -d api
+          EOF
+
+      - name: Run migrations on VPS (only when DB files changed)
+        if: steps.db_changes.outputs.changed == 'true'
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" << 'EOF'
+          set -e
+          cd /opt/yaya-eats
+          docker compose exec -T api npm run migrations:run
           EOF
 
       - name: API smoke check
