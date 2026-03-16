@@ -139,5 +139,5 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" << 'EOF'
           set -e
           echo "Checking http://127.0.0.1:3002/api/health from VPS"
-          curl -fSL --retry 8 --retry-delay 5 http://127.0.0.1:3002/api/health > /dev/null
+          curl -fSL --retry 8 --retry-delay 5 --retry-connrefused http://127.0.0.1:3002/api/health > /dev/null
           EOF
