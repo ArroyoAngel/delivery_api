@@ -48,7 +48,10 @@ export class RestaurantsController {
   @ApiOperation({ summary: 'Listar restaurantes' })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'categoryId', required: false })
-  findAll(@Query('search') search?: string, @Query('categoryId') categoryId?: string) {
+  findAll(
+    @Query('search') search?: string,
+    @Query('categoryId') categoryId?: string,
+  ) {
     return this.restaurants.findAll(search, categoryId);
   }
 
@@ -72,9 +75,18 @@ export class RestaurantsController {
   @UseGuards(JwtAuthGuard, CasbinGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Actualizar datos del restaurante' })
-  updateRestaurant(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+  updateRestaurant(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Request() req: any,
+  ) {
     const isSuperAdmin: boolean = req.user.roles?.includes('superadmin');
-    return this.restaurants.updateRestaurant(id, body, req.user.id, isSuperAdmin);
+    return this.restaurants.updateRestaurant(
+      id,
+      body,
+      req.user.id,
+      isSuperAdmin,
+    );
   }
 
   // ── Menú ──────────────────────────────────────────────────────────────────
@@ -98,8 +110,14 @@ export class RestaurantsController {
   @Patch(':id/menu/:itemId')
   @UseGuards(JwtAuthGuard, CasbinGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Actualizar un item del menú (stock, disponibilidad, precio…)' })
-  updateMenuItem(@Param('id') id: string, @Param('itemId') itemId: string, @Body() body: any) {
+  @ApiOperation({
+    summary: 'Actualizar un item del menú (stock, disponibilidad, precio…)',
+  })
+  updateMenuItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() body: any,
+  ) {
     return this.restaurants.updateMenuItem(id, itemId, body);
   }
 
@@ -131,7 +149,10 @@ export class RestaurantsController {
   @UseGuards(JwtAuthGuard, CasbinGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Actualizar permisos de un miembro del personal' })
-  @ApiParam({ name: 'staffId', description: 'ID del registro en tabla admins del staff' })
+  @ApiParam({
+    name: 'staffId',
+    description: 'ID del registro en tabla admins del staff',
+  })
   updateStaffPermissions(
     @Param('id') id: string,
     @Param('staffId') staffId: string,
@@ -139,7 +160,13 @@ export class RestaurantsController {
     @Request() req: any,
   ) {
     const isSuperAdmin = req.user.roles?.includes('superadmin');
-    return this.staff.updateStaffPermissions(id, staffId, req.user.id, body.permissions, isSuperAdmin);
+    return this.staff.updateStaffPermissions(
+      id,
+      staffId,
+      req.user.id,
+      body.permissions,
+      isSuperAdmin,
+    );
   }
 
   @Delete(':id/staff/:staffId')
@@ -173,14 +200,20 @@ export class RestaurantsController {
       'day_of_week: 0=Domingo … 6=Sábado. ' +
       'Usar is_closed: true para marcar días sin atención.',
   })
-  setSchedule(@Param('id') id: string, @Body() body: { days: any[] }, @Request() req: any) {
+  setSchedule(
+    @Param('id') id: string,
+    @Body() body: { days: any[] },
+    @Request() req: any,
+  ) {
     return this.schedule.setSchedule(id, req.user.id, body.days);
   }
 
   @Patch(':id/schedule/:day')
   @UseGuards(JwtAuthGuard, CasbinGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Actualizar horario de un día específico (0=Dom … 6=Sáb)' })
+  @ApiOperation({
+    summary: 'Actualizar horario de un día específico (0=Dom … 6=Sáb)',
+  })
   updateDay(
     @Param('id') id: string,
     @Param('day', ParseIntPipe) day: number,

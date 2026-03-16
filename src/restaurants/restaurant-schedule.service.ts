@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { RestaurantStaffPermission } from './restaurant-staff-permission.enum';
 
@@ -31,9 +35,7 @@ export class RestaurantScheduleService {
     );
     if (isOwner) return;
 
-    const permCheck = permission
-      ? `AND $3 = ANY(a.granted_permissions)`
-      : '';
+    const permCheck = permission ? `AND $3 = ANY(a.granted_permissions)` : '';
     const params: any[] = [restaurantId, accountId];
     if (permission) params.push(permission);
 

@@ -26,16 +26,20 @@ export class UsersService {
   }
 
   async updateRoles(id: string, roles: string[]) {
-    const account = await this.accounts.findOne({ where: { id }, relations: ['profile'] });
+    const account = await this.accounts.findOne({
+      where: { id },
+      relations: ['profile'],
+    });
     if (!account) throw new NotFoundException('Usuario no encontrado');
 
     const hadAdmin = account.roles.includes('admin');
     const losesAdmin = hadAdmin && !roles.includes('admin');
 
     // Un rider siempre debe tener también el rol client (puede ordenar comida)
-    const normalizedRoles = roles.includes('rider') && !roles.includes('client')
-      ? [...roles, 'client']
-      : roles;
+    const normalizedRoles =
+      roles.includes('rider') && !roles.includes('client')
+        ? [...roles, 'client']
+        : roles;
 
     account.roles = normalizedRoles;
     await this.accounts.save(account);

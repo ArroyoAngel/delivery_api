@@ -16,9 +16,13 @@ export class AiController {
   @Post('chat')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Chat IA con configuracion por rol desde system_config' })
+  @ApiOperation({
+    summary: 'Chat IA con configuracion por rol desde system_config',
+  })
   async chat(@Request() req, @Body() body: ChatRequestDto) {
-    const profile = await this.authService.me(req.user.id).catch(() => null) as any;
+    const profile = (await this.authService
+      .me(req.user.id)
+      .catch(() => null)) as any;
 
     const result = await this.aiService.chatByRole({
       userId: req.user.id,

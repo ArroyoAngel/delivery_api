@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AddressesService } from './addresses.service';
 import { CreateAddressDto } from './dto/create-address.dto';
@@ -25,7 +35,11 @@ export class AddressesController {
 
   @Put(':id')
   @ApiOperation({ summary: 'Actualizar dirección' })
-  update(@Request() req, @Param('id') id: string, @Body() dto: CreateAddressDto) {
+  update(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() dto: CreateAddressDto,
+  ) {
     return this.service.update(req.user.id, id, dto);
   }
 

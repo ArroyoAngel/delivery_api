@@ -13,9 +13,16 @@ import {
 
 /** Nombres de cargo que están reservados para roles del sistema */
 const RESERVED_ROLE_NAMES = [
-  'administrador', 'admin', 'superadmin', 'superadministrador',
-  'super admin', 'super administrador', 'dueño', 'propietario',
-  'owner', 'root',
+  'administrador',
+  'admin',
+  'superadmin',
+  'superadministrador',
+  'super admin',
+  'super administrador',
+  'dueño',
+  'propietario',
+  'owner',
+  'root',
 ];
 
 interface CreateStaffDto {
@@ -55,7 +62,8 @@ export class RestaurantStaffService {
          )`,
       [accountId, restaurantId],
     );
-    if (!row) throw new ForbiddenException('No tenés acceso a este restaurante');
+    if (!row)
+      throw new ForbiddenException('No tenés acceso a este restaurante');
     return row as {
       id: string;
       parent_admin_id: string | null;
@@ -102,7 +110,11 @@ export class RestaurantStaffService {
 
   // ── endpoints ─────────────────────────────────────────────────────────────
 
-  async listStaff(restaurantId: string, requesterAccountId: string, isSuperAdmin = false) {
+  async listStaff(
+    restaurantId: string,
+    requesterAccountId: string,
+    isSuperAdmin = false,
+  ) {
     if (!isSuperAdmin) {
       await this.getRequesterAdmin(restaurantId, requesterAccountId);
     }
@@ -176,10 +188,16 @@ export class RestaurantStaffService {
          LIMIT 1`,
         [restaurantId],
       );
-      if (!ownerAdmin) throw new NotFoundException('No se encontró el admin raíz del restaurante');
+      if (!ownerAdmin)
+        throw new NotFoundException(
+          'No se encontró el admin raíz del restaurante',
+        );
       parentAdminId = ownerAdmin.id;
     } else {
-      const requester = await this.getRequesterAdmin(restaurantId, requesterAccountId);
+      const requester = await this.getRequesterAdmin(
+        restaurantId,
+        requesterAccountId,
+      );
       parentAdminId = requester.id;
       // El admin raíz siempre puede crear staff; un sub-admin necesita MANAGE_STAFF
       if (requester.parent_admin_id !== null) {
@@ -195,7 +213,7 @@ export class RestaurantStaffService {
     if (RESERVED_ROLE_NAMES.includes(normalizedRoleName)) {
       throw new BadRequestException(
         `El cargo "${dto.roleName}" está reservado para roles del sistema. ` +
-        `Usá un nombre descriptivo como "Cajero", "Cocina" o "Supervisor".`,
+          `Usá un nombre descriptivo como "Cajero", "Cocina" o "Supervisor".`,
       );
     }
 
@@ -208,7 +226,9 @@ export class RestaurantStaffService {
 
     return this.dataSource.transaction(async (manager) => {
       const plainMode = process.env.AUTH_PLAIN_PASSWORD === 'true';
-      const hashed = plainMode ? dto.password : await bcrypt.hash(dto.password, 10);
+      const hashed = plainMode
+        ? dto.password
+        : await bcrypt.hash(dto.password, 10);
 
       const [account] = await manager.query(
         `INSERT INTO accounts (email, password, roles)
@@ -228,7 +248,13 @@ export class RestaurantStaffService {
         `INSERT INTO admins (profile_id, restaurant_id, parent_admin_id, granted_permissions, role_name)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id`,
-        [profile.id, restaurantId, parentAdminId, dto.permissions, dto.roleName],
+        [
+          profile.id,
+          restaurantId,
+          parentAdminId,
+          dto.permissions,
+          dto.roleName,
+        ],
       );
 
       return {
@@ -269,7 +295,8 @@ export class RestaurantStaffService {
            )`,
         [staffAdminId, restaurantId],
       );
-      if (!target) throw new NotFoundException('Admin no encontrado en este restaurante');
+      if (!target)
+        throw new NotFoundException('Admin no encontrado en este restaurante');
 
       await this.dataSource.query(
         'UPDATE admins SET granted_permissions = $1 WHERE id = $2',
@@ -293,7 +320,10 @@ export class RestaurantStaffService {
       return { id: staffAdminId, restaurantId, permissions };
     }
 
-    const requester = await this.getRequesterAdmin(restaurantId, requesterAccountId);
+    const requester = await this.getRequesterAdmin(
+      restaurantId,
+      requesterAccountId,
+    );
 
     if (requester.parent_admin_id !== null) {
       this.assertCanManageStaff(requester);
@@ -306,7 +336,8 @@ export class RestaurantStaffService {
       'SELECT id FROM admins WHERE id = $1 AND restaurant_id = $2',
       [staffAdminId, restaurantId],
     );
-    if (!staff) throw new NotFoundException('Personal no encontrado en este restaurante');
+    if (!staff)
+      throw new NotFoundException('Personal no encontrado en este restaurante');
 
     await this.dataSource.query(
       'UPDATE admins SET granted_permissions = $1 WHERE id = $2',
@@ -323,7 +354,10 @@ export class RestaurantStaffService {
     isSuperAdmin = false,
   ) {
     if (!isSuperAdmin) {
-      const requester = await this.getRequesterAdmin(restaurantId, requesterAccountId);
+      const requester = await this.getRequesterAdmin(
+        restaurantId,
+        requesterAccountId,
+      );
       if (requester.parent_admin_id !== null) {
         this.assertCanManageStaff(requester);
       }
@@ -336,7 +370,8 @@ export class RestaurantStaffService {
        WHERE a.id = $1 AND a.restaurant_id = $2`,
       [staffAdminId, restaurantId],
     );
-    if (!staff) throw new NotFoundException('Personal no encontrado en este restaurante');
+    if (!staff)
+      throw new NotFoundException('Personal no encontrado en este restaurante');
 
     // Quitar rol restaurant_staff de su cuenta
     await this.dataSource.query(
@@ -345,7 +380,9 @@ export class RestaurantStaffService {
     );
 
     // Eliminar registro admin (cascade eliminará sub-staff de este)
-    await this.dataSource.query('DELETE FROM admins WHERE id = $1', [staffAdminId]);
+    await this.dataSource.query('DELETE FROM admins WHERE id = $1', [
+      staffAdminId,
+    ]);
 
     return { message: 'Personal removido exitosamente' };
   }

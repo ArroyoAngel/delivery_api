@@ -127,16 +127,22 @@ export class AiService {
     const role = this.resolveRole(params.roles);
     const roleCfg = await this.loadRoleConfig(role);
 
-    const baseUrl = this.config.get('OWUI_BASE_URL', 'http://host.docker.internal:3000');
+    const baseUrl = this.config.get(
+      'OWUI_BASE_URL',
+      'http://host.docker.internal:3000',
+    );
     const apiKey = this.config.get<string>('OWUI_API_KEY', '');
 
     if (!apiKey) {
-      throw new BadGatewayException('OWUI_API_KEY no configurada en el servidor');
+      throw new BadGatewayException(
+        'OWUI_API_KEY no configurada en el servidor',
+      );
     }
 
     // Build user context block prepended to the system prompt
     const ctx = params.context ?? {};
-    const name = [ctx.firstName, ctx.lastName].filter(Boolean).join(' ') || 'Usuario';
+    const name =
+      [ctx.firstName, ctx.lastName].filter(Boolean).join(' ') || 'Usuario';
     const routes = ctx.grantedPermissions
       ? this.permissionsToRouteLabels(ctx.grantedPermissions)
       : ROLE_ROUTES[role];

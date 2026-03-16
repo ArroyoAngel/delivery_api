@@ -1,4 +1,11 @@
-import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -16,8 +23,21 @@ export class AuthController {
 
   @Post('register')
   @ApiOperation({ summary: 'Registrarse' })
-  register(@Body() body: { email: string; password: string; firstName: string; lastName: string }) {
-    return this.auth.register(body.email, body.password, body.firstName, body.lastName);
+  register(
+    @Body()
+    body: {
+      email: string;
+      password: string;
+      firstName: string;
+      lastName: string;
+    },
+  ) {
+    return this.auth.register(
+      body.email,
+      body.password,
+      body.firstName,
+      body.lastName,
+    );
   }
 
   @Post('google')
@@ -37,7 +57,9 @@ export class AuthController {
   @Get('frontend-access')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Rutas de frontend permitidas para el usuario actual' })
+  @ApiOperation({
+    summary: 'Rutas de frontend permitidas para el usuario actual',
+  })
   frontendAccess(@Request() req) {
     return this.auth.getFrontendAccess(req.user.id, req.user.roles ?? []);
   }

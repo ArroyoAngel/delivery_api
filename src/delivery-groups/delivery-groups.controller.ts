@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Put, Param, Query, Body, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Param,
+  Query,
+  Body,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CasbinGuard } from '../authorization/guards/casbin.guard';
@@ -12,22 +22,37 @@ export class DeliveryGroupsController {
   constructor(private readonly service: DeliveryGroupsService) {}
 
   @Get('list')
-  @ApiOperation({ summary: 'Lista completa de repartidores con info de perfil' })
+  @ApiOperation({
+    summary: 'Lista completa de repartidores con info de perfil',
+  })
   allRiders() {
     return this.service.getAllRiders();
   }
 
   @Get('location/config')
-  @ApiOperation({ summary: 'Configuración de tracking GPS: intervalo actual en segundos' })
+  @ApiOperation({
+    summary: 'Configuración de tracking GPS: intervalo actual en segundos',
+  })
   locationConfig() {
-    return this.service.getLocationIntervalSeconds().then((s) => ({ intervalSeconds: s }));
+    return this.service
+      .getLocationIntervalSeconds()
+      .then((s) => ({ intervalSeconds: s }));
   }
 
   @Post('location/batch')
-  @ApiOperation({ summary: 'Sube un segmento de ruta GPS como "lat,lng;lat,lng;..." con el intervalo usado' })
+  @ApiOperation({
+    summary:
+      'Sube un segmento de ruta GPS como "lat,lng;lat,lng;..." con el intervalo usado',
+  })
   locationBatch(
     @Request() req: any,
-    @Body() body: { path: string; startedAt: string; endedAt: string; intervalSeconds: number },
+    @Body()
+    body: {
+      path: string;
+      startedAt: string;
+      endedAt: string;
+      intervalSeconds: number;
+    },
   ) {
     return this.service.saveLocationSegment(
       req.user.id,
@@ -39,13 +64,17 @@ export class DeliveryGroupsController {
   }
 
   @Get(':id/location-history/dates')
-  @ApiOperation({ summary: 'Fechas disponibles en el historial de un repartidor' })
+  @ApiOperation({
+    summary: 'Fechas disponibles en el historial de un repartidor',
+  })
   locationHistoryDates(@Param('id') id: string) {
     return this.service.getRiderLocationDates(id);
   }
 
   @Get(':id/location-history')
-  @ApiOperation({ summary: 'Historial de ubicación de un repartidor por fecha' })
+  @ApiOperation({
+    summary: 'Historial de ubicación de un repartidor por fecha',
+  })
   locationHistory(@Param('id') id: string, @Query('date') date: string) {
     return this.service.getRiderLocationHistory(id, date);
   }
@@ -75,7 +104,10 @@ export class DeliveryGroupsController {
   }
 
   @Put('orders/:orderId/pickup')
-  @ApiOperation({ summary: 'Marcar pedido como recogido del restaurante (aceptado → en_camino)' })
+  @ApiOperation({
+    summary:
+      'Marcar pedido como recogido del restaurante (aceptado → en_camino)',
+  })
   markPickedUp(@Request() req: any, @Param('orderId') orderId: string) {
     return this.service.markOrderPickedUp(req.user.id, orderId);
   }
@@ -85,5 +117,4 @@ export class DeliveryGroupsController {
   markDelivered(@Request() req, @Param('orderId') orderId: string) {
     return this.service.markOrderDelivered(req.user.id, orderId);
   }
-
 }

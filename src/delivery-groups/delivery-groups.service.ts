@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, IsNull, LessThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -8,7 +13,12 @@ import { SystemConfigService } from '../system-config/system-config.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
 // Fórmula Haversine: distancia en metros entre dos coordenadas
-function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+function haversineMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
   const R = 6371000;
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
@@ -24,7 +34,8 @@ export class DeliveryGroupsService {
   private readonly logger = new Logger(DeliveryGroupsService.name);
 
   constructor(
-    @InjectRepository(DeliveryGroupEntity) private groups: Repository<DeliveryGroupEntity>,
+    @InjectRepository(DeliveryGroupEntity)
+    private groups: Repository<DeliveryGroupEntity>,
     @InjectRepository(OrderEntity) private orders: Repository<OrderEntity>,
     private dataSource: DataSource,
     private cfg: SystemConfigService,
@@ -73,7 +84,10 @@ export class DeliveryGroupsService {
       [riderId],
     );
     return rows.map((r: { date: string | Date }) =>
-      (r.date instanceof Date ? r.date.toISOString() : String(r.date)).slice(0, 10),
+      (r.date instanceof Date ? r.date.toISOString() : String(r.date)).slice(
+        0,
+        10,
+      ),
     );
   }
 
@@ -111,12 +125,16 @@ export class DeliveryGroupsService {
     return row?.id ?? null;
   }
 
-  private async assertRestaurantOrderManageAccess(orderId: string, accountId: string): Promise<void> {
+  private async assertRestaurantOrderManageAccess(
+    orderId: string,
+    accountId: string,
+  ): Promise<void> {
     const [order] = await this.dataSource.query(
       `SELECT restaurant_id FROM orders WHERE id = $1 LIMIT 1`,
       [orderId],
     );
-    if (!order?.restaurant_id) throw new NotFoundException('Orden no encontrada');
+    if (!order?.restaurant_id)
+      throw new NotFoundException('Orden no encontrada');
 
     const [owner] = await this.dataSource.query(
       `SELECT 1
@@ -136,7 +154,9 @@ export class DeliveryGroupsService {
       [order.restaurant_id, accountId],
     );
     if (!staff) {
-      throw new ForbiddenException('No tenés permisos para gestionar este pedido');
+      throw new ForbiddenException(
+        'No tenés permisos para gestionar este pedido',
+      );
     }
   }
 
@@ -163,7 +183,10 @@ export class DeliveryGroupsService {
   // Busca pedidos 'listo' sin grupo y los agrupa
   async tryGroupOrders(): Promise<DeliveryGroupEntity[]> {
     const maxOrders = await this.cfg.getNumber('max_orders_per_group', 3);
-    const radiusMeters = await this.cfg.getNumber('nearby_restaurant_radius_meters', 200);
+    const radiusMeters = await this.cfg.getNumber(
+      'nearby_restaurant_radius_meters',
+      200,
+    );
 
     const ungrouped = await this.orders.find({
       where: { status: 'listo', groupId: IsNull() },
@@ -200,7 +223,8 @@ export class DeliveryGroupsService {
       // 1. Pedidos del mismo restaurante
       for (const o of ungrouped) {
         if (group.length >= maxOrders) break;
-        if (assigned.has(o.id) || o.restaurantId !== seed.restaurantId) continue;
+        if (assigned.has(o.id) || o.restaurantId !== seed.restaurantId)
+          continue;
         group.push(o);
         assigned.add(o.id);
       }
@@ -230,7 +254,9 @@ export class DeliveryGroupsService {
 
       // Solo creamos grupo si hay al menos maxOrders pedidos
       if (group.length >= maxOrders) {
-        const newGroup = await this.groups.save(this.groups.create({ status: 'available' }));
+        const newGroup = await this.groups.save(
+          this.groups.create({ status: 'available' }),
+        );
         for (const o of group) {
           await this.orders.update(o.id, { groupId: newGroup.id });
         }
@@ -264,9 +290,12 @@ export class DeliveryGroupsService {
 
   async acceptGroup(accountId: string, groupId: string) {
     const riderId = await this.resolveRiderId(accountId);
-    if (!riderId) throw new ForbiddenException('No estás registrado como repartidor');
+    if (!riderId)
+      throw new ForbiddenException('No estás registrado como repartidor');
 
-    const group = await this.groups.findOne({ where: { id: groupId, status: 'available' } });
+    const group = await this.groups.findOne({
+      where: { id: groupId, status: 'available' },
+    });
     if (!group) throw new NotFoundException('Grupo no disponible');
     const already = await this.groups.findOne({
       where: [
@@ -286,11 +315,18 @@ export class DeliveryGroupsService {
 
   async markOrderPickedUp(accountId: string, orderId: string) {
     const riderId = await this.resolveRiderId(accountId);
-    const order = await this.orders.findOne({ where: { id: orderId, riderId: riderId ?? undefined } });
+    const order = await this.orders.findOne({
+      where: { id: orderId, riderId: riderId ?? undefined },
+    });
     if (!order) throw new NotFoundException('Orden no encontrada');
-    if (order.status !== 'listo') throw new ForbiddenException(`El pedido aún no está listo para recoger (estado: ${order.status})`);
+    if (order.status !== 'listo')
+      throw new ForbiddenException(
+        `El pedido aún no está listo para recoger (estado: ${order.status})`,
+      );
     await this.orders.update(orderId, { status: 'en_camino' });
-    this.notifications.notifyClientOrderStatus(order.clientId, 'en_camino').catch(() => null);
+    this.notifications
+      .notifyClientOrderStatus(order.clientId, 'en_camino')
+      .catch(() => null);
     return { id: orderId, status: 'en_camino' };
   }
 
@@ -299,23 +335,33 @@ export class DeliveryGroupsService {
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (!['confirmado', 'pendiente'].includes(order.status)) {
-      throw new ForbiddenException(`No se puede pasar a preparando desde '${order.status}'`);
+      throw new ForbiddenException(
+        `No se puede pasar a preparando desde '${order.status}'`,
+      );
     }
     await this.orders.update(orderId, { status: 'preparando' });
-    this.notifications.notifyClientOrderStatus(order.clientId, 'preparando').catch(() => null);
+    this.notifications
+      .notifyClientOrderStatus(order.clientId, 'preparando')
+      .catch(() => null);
     return { id: orderId, status: 'preparando' };
   }
 
   async markOrderDelivered(accountId: string, orderId: string) {
     const riderId = await this.resolveRiderId(accountId);
-    const order = await this.orders.findOne({ where: { id: orderId, riderId: riderId ?? undefined } });
+    const order = await this.orders.findOne({
+      where: { id: orderId, riderId: riderId ?? undefined },
+    });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (order.status === 'entregado') return { message: 'Ya entregado' };
-    if (order.status !== 'en_camino') throw new ForbiddenException('Debés recoger el pedido antes de marcarlo como entregado');
-
+    if (order.status !== 'en_camino')
+      throw new ForbiddenException(
+        'Debés recoger el pedido antes de marcarlo como entregado',
+      );
 
     await this.orders.update(orderId, { status: 'entregado' });
-    this.notifications.notifyClientOrderStatus(order.clientId, 'entregado').catch(() => null);
+    this.notifications
+      .notifyClientOrderStatus(order.clientId, 'entregado')
+      .catch(() => null);
 
     // Verificar si todos los pedidos del grupo están entregados
     if (order.groupId) {
@@ -338,11 +384,15 @@ export class DeliveryGroupsService {
 
   /** Crea un grupo express en estado 'waiting' y vincula las órdenes dadas. */
   async createGroupForOrders(orderIds: string[]): Promise<DeliveryGroupEntity> {
-    const group = await this.groups.save(this.groups.create({ status: 'waiting' }));
+    const group = await this.groups.save(
+      this.groups.create({ status: 'waiting' }),
+    );
     for (const id of orderIds) {
       await this.orders.update(id, { groupId: group.id });
     }
-    this.logger.log(`Express group ${group.id} creado con ${orderIds.length} orden(es)`);
+    this.logger.log(
+      `Express group ${group.id} creado con ${orderIds.length} orden(es)`,
+    );
     return group;
   }
 
@@ -362,8 +412,12 @@ export class DeliveryGroupsService {
     if (Number(count) >= 1) {
       const total = await this.orders.count({ where: { groupId } });
       await this.groups.update(groupId, { status: 'available' });
-      this.logger.log(`Grupo ${groupId} activado: ${count}/${total} restaurantes listos`);
-      this.notifications.notifyRidersGroupAvailable(groupId, Number(count)).catch(() => null);
+      this.logger.log(
+        `Grupo ${groupId} activado: ${count}/${total} restaurantes listos`,
+      );
+      this.notifications
+        .notifyRidersGroupAvailable(groupId, Number(count))
+        .catch(() => null);
     }
   }
 
@@ -372,17 +426,23 @@ export class DeliveryGroupsService {
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (!['preparando', 'confirmado'].includes(order.status)) {
-      throw new ForbiddenException(`No se puede marcar como listo desde estado '${order.status}'`);
+      throw new ForbiddenException(
+        `No se puede marcar como listo desde estado '${order.status}'`,
+      );
     }
     await this.orders.update(orderId, { status: 'listo' });
-    this.notifications.notifyClientOrderStatus(order.clientId, 'listo').catch(() => null);
+    this.notifications
+      .notifyClientOrderStatus(order.clientId, 'listo')
+      .catch(() => null);
     if (order.groupId) {
       await this.checkAndActivateGroup(order.groupId);
       return { id: orderId, status: 'listo', groupsCreated: 0 };
     }
     const newGroups = await this.tryGroupOrders();
     if (newGroups.length > 0) {
-      this.notifications.notifyRidersGroupAvailable(newGroups[0].id, 1).catch(() => null);
+      this.notifications
+        .notifyRidersGroupAvailable(newGroups[0].id, 1)
+        .catch(() => null);
     }
     return { id: orderId, status: 'listo', groupsCreated: newGroups.length };
   }
@@ -390,7 +450,10 @@ export class DeliveryGroupsService {
   @Cron(CronExpression.EVERY_MINUTE)
   async forceGroupExpiredOrders(): Promise<void> {
     const waitMinutes = await this.cfg.getNumber('group_wait_minutes', 5);
-    const radiusMeters = await this.cfg.getNumber('nearby_restaurant_radius_meters', 200);
+    const radiusMeters = await this.cfg.getNumber(
+      'nearby_restaurant_radius_meters',
+      200,
+    );
     const cutoff = new Date(Date.now() - waitMinutes * 60 * 1000);
 
     // Intentar agrupar primero (puede que nuevos pedidos llegaron)
@@ -398,7 +461,11 @@ export class DeliveryGroupsService {
 
     // Pedidos que siguen sin grupo después del tiempo de espera
     const expired = await this.orders.find({
-      where: { status: 'listo', groupId: IsNull(), updatedAt: LessThan(cutoff) },
+      where: {
+        status: 'listo',
+        groupId: IsNull(),
+        updatedAt: LessThan(cutoff),
+      },
       order: { createdAt: 'ASC' },
     });
 
@@ -415,7 +482,9 @@ export class DeliveryGroupsService {
     const restMap = new Map(restaurants.map((r) => [r.id, r]));
 
     const assigned = new Set<string>();
-    this.logger.log(`Forzando despacho de ${expired.length} pedido(s) listo con espera vencida`);
+    this.logger.log(
+      `Forzando despacho de ${expired.length} pedido(s) listo con espera vencida`,
+    );
 
     for (const seed of expired) {
       if (assigned.has(seed.id)) continue;
@@ -425,7 +494,8 @@ export class DeliveryGroupsService {
 
       // 1) Mismo restaurante
       for (const o of expired) {
-        if (assigned.has(o.id) || o.restaurantId !== seed.restaurantId) continue;
+        if (assigned.has(o.id) || o.restaurantId !== seed.restaurantId)
+          continue;
         group.push(o);
         assigned.add(o.id);
       }
@@ -450,7 +520,9 @@ export class DeliveryGroupsService {
         }
       }
 
-      const forcedGroup = await this.groups.save(this.groups.create({ status: 'available' }));
+      const forcedGroup = await this.groups.save(
+        this.groups.create({ status: 'available' }),
+      );
       for (const o of group) {
         await this.orders.update(o.id, { groupId: forcedGroup.id });
       }

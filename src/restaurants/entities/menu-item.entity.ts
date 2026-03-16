@@ -17,7 +17,8 @@ export class MenuItemEntity {
   @Column({ type: 'int', nullable: true, default: null }) stock: number | null;
 
   /** Límite de ventas diarias. NULL = sin límite */
-  @Column({ name: 'daily_limit', type: 'int', nullable: true, default: null }) dailyLimit: number | null;
+  @Column({ name: 'daily_limit', type: 'int', nullable: true, default: null })
+  dailyLimit: number | null;
 
   /** Unidades vendidas en el día (se resetea cada día) */
   @Column({ name: 'daily_sold', type: 'int', default: 0 }) dailySold: number;

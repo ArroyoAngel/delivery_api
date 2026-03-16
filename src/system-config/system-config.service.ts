@@ -7,7 +7,8 @@ const DEFAULTS: { key: string; value: string; description: string }[] = [
   {
     key: 'nearby_restaurant_radius_meters',
     value: '200',
-    description: 'Radio máximo en metros para agrupar pedidos de restaurantes cercanos',
+    description:
+      'Radio máximo en metros para agrupar pedidos de restaurantes cercanos',
   },
   {
     key: 'max_orders_per_group',
@@ -17,12 +18,14 @@ const DEFAULTS: { key: string; value: string; description: string }[] = [
   {
     key: 'group_wait_minutes',
     value: '5',
-    description: 'Minutos de espera antes de enviar un pedido solo sin grupo completo',
+    description:
+      'Minutos de espera antes de enviar un pedido solo sin grupo completo',
   },
   {
     key: 'location_interval_seconds',
     value: '5',
-    description: 'Intervalo en segundos entre puntos GPS del repartidor (1–300). Se aplica al iniciar sesión de tracking.',
+    description:
+      'Intervalo en segundos entre puntos GPS del repartidor (1–300). Se aplica al iniciar sesión de tracking.',
   },
   {
     key: 'platform_service_fee',
@@ -39,7 +42,8 @@ const DEFAULTS: { key: string; value: string; description: string }[] = [
 @Injectable()
 export class SystemConfigService implements OnApplicationBootstrap {
   constructor(
-    @InjectRepository(SystemConfigEntity) private repo: Repository<SystemConfigEntity>,
+    @InjectRepository(SystemConfigEntity)
+    private repo: Repository<SystemConfigEntity>,
   ) {}
 
   async onApplicationBootstrap() {

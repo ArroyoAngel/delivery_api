@@ -1,4 +1,11 @@
-import { Controller, Get, Param, Query, Request, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { CasbinGuard } from '../authorization/guards/casbin.guard';
@@ -25,7 +32,9 @@ export class PaymentsAdminController {
   }
 
   @Get('admin/bank-accounts')
-  @ApiOperation({ summary: 'Listado de cuentas bancarias (restaurantes y riders)' })
+  @ApiOperation({
+    summary: 'Listado de cuentas bancarias (restaurantes y riders)',
+  })
   getBankAccounts() {
     return this.paymentsAdmin.getBankAccounts();
   }
@@ -44,7 +53,9 @@ export class PaymentsAdminController {
   }
 
   @Get('my/bank-accounts')
-  @ApiOperation({ summary: 'Mis cuentas bancarias (restaurante dueño o staff)' })
+  @ApiOperation({
+    summary: 'Mis cuentas bancarias (restaurante dueño o staff)',
+  })
   getMyBankAccounts(@Request() req: any) {
     return this.paymentsAdmin.getMyBankAccounts(req.user.id);
   }
@@ -72,7 +83,10 @@ export class PaymentsAdminController {
 
   @Get('admin/restaurant/:id/withdrawals')
   @ApiOperation({ summary: 'Retiros de un restaurante (superadmin)' })
-  getRestaurantWithdrawals(@Param('id') id: string, @Query('limit') limit?: string) {
+  getRestaurantWithdrawals(
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+  ) {
     const safeLimit = Math.max(1, Math.min(Number(limit) || 100, 500));
     return this.paymentsAdmin.getRestaurantWithdrawals(id, safeLimit);
   }

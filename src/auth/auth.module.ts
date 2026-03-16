@@ -15,7 +15,13 @@ import { AdminEntity } from '../profiles/admin.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AccountEntity, ProfileEntity, ClientEntity, RiderEntity, AdminEntity]),
+    TypeOrmModule.forFeature([
+      AccountEntity,
+      ProfileEntity,
+      ClientEntity,
+      RiderEntity,
+      AdminEntity,
+    ]),
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

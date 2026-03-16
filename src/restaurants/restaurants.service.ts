@@ -11,7 +11,8 @@ import { RestaurantStaffPermission } from './restaurant-staff-permission.enum';
 @Injectable()
 export class RestaurantsService {
   constructor(
-    @InjectRepository(RestaurantEntity) private restaurants: Repository<RestaurantEntity>,
+    @InjectRepository(RestaurantEntity)
+    private restaurants: Repository<RestaurantEntity>,
     private dataSource: DataSource,
   ) {}
 
@@ -19,7 +20,10 @@ export class RestaurantsService {
     const where: any = { isOpen: true };
     if (search) where.name = ILike(`%${search}%`);
     if (categoryId) where.categoryId = categoryId;
-    const list = await this.restaurants.find({ where, order: { rating: 'DESC' } });
+    const list = await this.restaurants.find({
+      where,
+      order: { rating: 'DESC' },
+    });
     return list;
   }
 
@@ -47,11 +51,14 @@ export class RestaurantsService {
         [accountId],
       );
       if (row?.restaurant_id) {
-        restaurant = await this.restaurants.findOne({ where: { id: row.restaurant_id } });
+        restaurant = await this.restaurants.findOne({
+          where: { id: row.restaurant_id },
+        });
       }
     }
 
-    if (!restaurant) throw new NotFoundException('No tenés un restaurante asignado');
+    if (!restaurant)
+      throw new NotFoundException('No tenés un restaurante asignado');
     return this.attachMenu(restaurant);
   }
 
@@ -118,23 +125,48 @@ export class RestaurantsService {
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
-    if (dto.name !== undefined)        { fields.push(`name = $${idx++}`);         values.push(dto.name); }
-    if (dto.description !== undefined) { fields.push(`description = $${idx++}`);  values.push(dto.description); }
-    if (dto.price !== undefined)       { fields.push(`price = $${idx++}`);        values.push(dto.price); }
-    if (dto.isAvailable !== undefined) { fields.push(`is_available = $${idx++}`); values.push(dto.isAvailable); }
-    if ('stock' in dto)                { fields.push(`stock = $${idx++}`);        values.push(dto.stock ?? null); }
-    if ('dailyLimit' in dto)           { fields.push(`daily_limit = $${idx++}`);  values.push(dto.dailyLimit ?? null); }
+    if (dto.name !== undefined) {
+      fields.push(`name = $${idx++}`);
+      values.push(dto.name);
+    }
+    if (dto.description !== undefined) {
+      fields.push(`description = $${idx++}`);
+      values.push(dto.description);
+    }
+    if (dto.price !== undefined) {
+      fields.push(`price = $${idx++}`);
+      values.push(dto.price);
+    }
+    if (dto.isAvailable !== undefined) {
+      fields.push(`is_available = $${idx++}`);
+      values.push(dto.isAvailable);
+    }
+    if ('stock' in dto) {
+      fields.push(`stock = $${idx++}`);
+      values.push(dto.stock ?? null);
+    }
+    if ('dailyLimit' in dto) {
+      fields.push(`daily_limit = $${idx++}`);
+      values.push(dto.dailyLimit ?? null);
+    }
     if (!fields.length) return item;
     values.push(itemId);
     await this.dataSource.query(
       `UPDATE menu_items SET ${fields.join(', ')} WHERE id = $${idx}`,
       values,
     );
-    return this.dataSource.query('SELECT * FROM menu_items WHERE id = $1', [itemId]).then((r) => r[0]);
+    return this.dataSource
+      .query('SELECT * FROM menu_items WHERE id = $1', [itemId])
+      .then((r) => r[0]);
   }
 
-  async createMenuCategory(restaurantId: string, dto: { name: string; sortOrder?: number }) {
-    const restaurant = await this.restaurants.findOne({ where: { id: restaurantId } });
+  async createMenuCategory(
+    restaurantId: string,
+    dto: { name: string; sortOrder?: number },
+  ) {
+    const restaurant = await this.restaurants.findOne({
+      where: { id: restaurantId },
+    });
     if (!restaurant) throw new NotFoundException('Restaurante no encontrado');
     const [row] = await this.dataSource.query(
       `INSERT INTO menu_categories (restaurant_id, name, sort_order)
@@ -159,7 +191,9 @@ export class RestaurantsService {
       size?: number;
     },
   ) {
-    const restaurant = await this.restaurants.findOne({ where: { id: restaurantId } });
+    const restaurant = await this.restaurants.findOne({
+      where: { id: restaurantId },
+    });
     if (!restaurant) throw new NotFoundException('Restaurante no encontrado');
     const [row] = await this.dataSource.query(
       `INSERT INTO menu_items
@@ -185,7 +219,9 @@ export class RestaurantsService {
   }
 
   async getCategories() {
-    return this.dataSource.query('SELECT * FROM restaurant_categories ORDER BY sort_order');
+    return this.dataSource.query(
+      'SELECT * FROM restaurant_categories ORDER BY sort_order',
+    );
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
@@ -210,7 +246,10 @@ export class RestaurantsService {
     );
     return {
       ...restaurant,
-      menuCategories: menuCategories.map((c: any) => ({ ...c, items: c.items ?? [] })),
+      menuCategories: menuCategories.map((c: any) => ({
+        ...c,
+        items: c.items ?? [],
+      })),
     };
   }
 

@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -7,36 +12,58 @@ import { AccountEntity } from './account.entity';
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectRepository(AccountEntity) private accounts: Repository<AccountEntity>,
+    @InjectRepository(AccountEntity)
+    private accounts: Repository<AccountEntity>,
     private jwt: JwtService,
     private dataSource: DataSource,
   ) {}
 
   private token(account: AccountEntity) {
-    return { accessToken: this.jwt.sign({ sub: account.id, email: account.email, roles: account.roles }) };
+    return {
+      accessToken: this.jwt.sign({
+        sub: account.id,
+        email: account.email,
+        roles: account.roles,
+      }),
+    };
   }
 
   async login(email: string, password: string) {
     const account = await this.accounts.findOne({ where: { email } });
     const plainMode = process.env.AUTH_PLAIN_PASSWORD === 'true';
-    if (!account || (plainMode ? account.password !== password : account.password !== password)) {
+    if (
+      !account ||
+      (plainMode
+        ? account.password !== password
+        : account.password !== password)
+    ) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
     return this.token(account);
   }
 
-  async register(email: string, password: string, firstName: string, lastName: string) {
+  async register(
+    email: string,
+    password: string,
+    firstName: string,
+    lastName: string,
+  ) {
     const exists = await this.accounts.findOne({ where: { email } });
     if (exists) throw new ConflictException('Email ya registrado');
-    const account = await this.accounts.save(this.accounts.create({ email, password }));
+    const account = await this.accounts.save(
+      this.accounts.create({ email, password }),
+    );
     return this.token(account);
   }
 
   async googleLogin(idToken: string) {
-    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
+    const res = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`,
+    );
     if (!res.ok) throw new BadRequestException('Token de Google inválido');
     const payload: any = await res.json();
-    if (payload.error) throw new BadRequestException('Token de Google inválido');
+    if (payload.error)
+      throw new BadRequestException('Token de Google inválido');
 
     const { sub: googleId, email } = payload;
 
@@ -47,7 +74,9 @@ export class AuthService {
         await this.accounts.update(account.id, { googleId });
         account.googleId = googleId;
       } else {
-        account = await this.accounts.save(this.accounts.create({ email, googleId }));
+        account = await this.accounts.save(
+          this.accounts.create({ email, googleId }),
+        );
       }
     }
     return this.token(account);
@@ -56,8 +85,13 @@ export class AuthService {
   /** Devuelve las rutas de frontend permitidas para el usuario (según casbin_rule v4='frontend').
    *  Si el usuario es un sub-admin (staff), filtra por sus granted_permissions en vez de devolver
    *  todas las rutas del rol 'admin'. */
-  async getFrontendAccess(accountId: string, roles: string[]): Promise<string[]> {
-    const normalized = roles.map((r) => (r === 'super_admin' ? 'superadmin' : r));
+  async getFrontendAccess(
+    accountId: string,
+    roles: string[],
+  ): Promise<string[]> {
+    const normalized = roles.map((r) =>
+      r === 'super_admin' ? 'superadmin' : r,
+    );
 
     // Si es admin, verificar si es staff (parent_admin_id != NULL)
     if (normalized.includes('admin') && !normalized.includes('superadmin')) {
@@ -96,7 +130,11 @@ export class AuthService {
     if (perms.includes('manage_orders') || perms.includes('view_orders')) {
       routes.add('/dashboard/orders');
     }
-    if (perms.includes('manage_restaurant') || perms.includes('manage_menu') || perms.includes('manage_schedule')) {
+    if (
+      perms.includes('manage_restaurant') ||
+      perms.includes('manage_menu') ||
+      perms.includes('manage_schedule')
+    ) {
       routes.add('/dashboard/my-restaurant');
     }
     if (

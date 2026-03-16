@@ -6,10 +6,16 @@ import { CreateAddressDto } from './dto/create-address.dto';
 
 @Injectable()
 export class AddressesService {
-  constructor(@InjectRepository(AddressEntity) private addresses: Repository<AddressEntity>) {}
+  constructor(
+    @InjectRepository(AddressEntity)
+    private addresses: Repository<AddressEntity>,
+  ) {}
 
   findAll(accountId: string) {
-    return this.addresses.find({ where: { accountId }, order: { isDefault: 'DESC', createdAt: 'ASC' } });
+    return this.addresses.find({
+      where: { accountId },
+      order: { isDefault: 'DESC', createdAt: 'ASC' },
+    });
   }
 
   async create(accountId: string, dto: CreateAddressDto) {

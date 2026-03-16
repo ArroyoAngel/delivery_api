@@ -10,7 +10,13 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([OrderEntity]), AuthModule, DeliveryGroupsModule, NotificationsModule, SystemConfigModule],
+  imports: [
+    TypeOrmModule.forFeature([OrderEntity]),
+    AuthModule,
+    DeliveryGroupsModule,
+    NotificationsModule,
+    SystemConfigModule,
+  ],
   controllers: [OrdersController, PaymentsController],
   providers: [OrdersService],
 })

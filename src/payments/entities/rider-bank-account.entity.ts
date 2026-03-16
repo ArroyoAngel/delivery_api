@@ -1,4 +1,10 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 @Entity('rider_bank_accounts')
 export class RiderBankAccountEntity {
@@ -7,8 +13,11 @@ export class RiderBankAccountEntity {
   @Column({ name: 'bank_name' }) bankName: string;
   @Column({ name: 'account_holder' }) accountHolder: string;
   @Column({ name: 'account_number' }) accountNumber: string;
-  @Column({ name: 'account_type', type: 'varchar', nullable: true }) accountType: string | null;
-  @Column({ name: 'branch_name', type: 'varchar', nullable: true }) branchName: string | null;
+  @Column({ name: 'account_type', type: 'varchar', nullable: true })
+  accountType: string | null;
+  @Column({ name: 'branch_name', type: 'varchar', nullable: true }) branchName:
+    | string
+    | null;
   @Column({ default: 'BOB' }) currency: string;
   @Column({ name: 'is_default', default: false }) isDefault: boolean;
   @Column({ name: 'is_active', default: true }) isActive: boolean;

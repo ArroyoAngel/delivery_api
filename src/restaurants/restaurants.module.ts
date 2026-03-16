@@ -11,10 +11,18 @@ import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([RestaurantEntity, MenuItemEntity, RestaurantScheduleEntity]),
+    TypeOrmModule.forFeature([
+      RestaurantEntity,
+      MenuItemEntity,
+      RestaurantScheduleEntity,
+    ]),
     AuthModule,
   ],
   controllers: [RestaurantsController],
-  providers: [RestaurantsService, RestaurantStaffService, RestaurantScheduleService],
+  providers: [
+    RestaurantsService,
+    RestaurantStaffService,
+    RestaurantScheduleService,
+  ],
 })
 export class RestaurantsModule {}

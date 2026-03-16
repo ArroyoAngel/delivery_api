@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Put, Param, Body, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Param,
+  Body,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import {
@@ -54,7 +63,10 @@ export class OrdersController {
   }
 
   @Post('express-checkout')
-  @ApiOperation({ summary: 'Checkout express multi-restaurante — crea un grupo de entrega inmediato' })
+  @ApiOperation({
+    summary:
+      'Checkout express multi-restaurante — crea un grupo de entrega inmediato',
+  })
   expressCheckout(@Request() req, @Body() dto: ExpressCheckoutDto) {
     return this.orders.expressCheckout(req.user.id, dto);
   }
@@ -67,7 +79,9 @@ export class OrdersController {
 
   @Put(':id/status')
   @UseGuards(CasbinGuard)
-  @ApiOperation({ summary: 'Actualizar estado de pedido — solo admin / superadmin' })
+  @ApiOperation({
+    summary: 'Actualizar estado de pedido — solo admin / superadmin',
+  })
   updateStatus(@Param('id') id: string, @Body() body: { status: string }) {
     return this.orders.updateStatus(id, body.status);
   }
@@ -89,14 +103,23 @@ export class OrdersController {
   @Post('restaurant/local/areas')
   @UseGuards(CasbinGuard)
   @ApiOperation({ summary: 'Crear área/mesa para servicio en local' })
-  createRestaurantLocalArea(@Request() req, @Body() dto: CreateRestaurantServiceAreaDto) {
+  createRestaurantLocalArea(
+    @Request() req,
+    @Body() dto: CreateRestaurantServiceAreaDto,
+  ) {
     return this.orders.createRestaurantServiceArea(req.user.id, dto);
   }
 
   @Post('restaurant/local/cash')
   @UseGuards(CasbinGuard)
-  @ApiOperation({ summary: 'Registrar orden local/recogida pagada en efectivo (estado confirmado)' })
-  createRestaurantLocalCashOrder(@Request() req, @Body() dto: CreateRestaurantLocalOrderDto) {
+  @ApiOperation({
+    summary:
+      'Registrar orden local/recogida pagada en efectivo (estado confirmado)',
+  })
+  createRestaurantLocalCashOrder(
+    @Request() req,
+    @Body() dto: CreateRestaurantLocalOrderDto,
+  ) {
     return this.orders.createRestaurantLocalCashOrder(req.user.id, dto);
   }
 
@@ -131,5 +154,4 @@ export class OrdersController {
   markDone(@Request() req: any, @Param('id') id: string) {
     return this.groups.markOrderDelivered(req.user.id, id);
   }
-
 }

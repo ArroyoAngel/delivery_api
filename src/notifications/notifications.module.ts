@@ -7,7 +7,10 @@ import { NotificationsController } from './notifications.controller';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DeviceTokenEntity, NotificationEntity]), AuthModule],
+  imports: [
+    TypeOrmModule.forFeature([DeviceTokenEntity, NotificationEntity]),
+    AuthModule,
+  ],
   controllers: [NotificationsController],
   providers: [NotificationsService],
   exports: [NotificationsService],

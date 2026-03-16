@@ -48,7 +48,12 @@ export class AdminEntity {
   parentAdmin: AdminEntity | null;
 
   /** Permisos otorgados (siempre ⊆ permisos del padre) */
-  @Column({ name: 'granted_permissions', type: 'text', array: true, default: [] })
+  @Column({
+    name: 'granted_permissions',
+    type: 'text',
+    array: true,
+    default: [],
+  })
   grantedPermissions: string[];
 
   /** Nombre del cargo dentro del restaurante (ej: "Cajero", "Cocina"). NULL para admins raíz. */

@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: 'npm'
@@ -38,19 +38,35 @@ jobs:
     environment: qa
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          if [ -n "${{ secrets.VPS_SSH_KEY_B64 }}" ]; then
+            printf '%s' "${{ secrets.VPS_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/deploy_key || {
+              echo "VPS_SSH_KEY_B64 is not valid Base64."
+              exit 1
+            }
+          else
+            printf '%s' "${{ secrets.VPS_SSH_KEY }}" | tr -d '\r' > ~/.ssh/deploy_key
+          fi
+          chmod 600 ~/.ssh/deploy_key
+          grep -q "BEGIN OPENSSH PRIVATE KEY" ~/.ssh/deploy_key || {
+            echo "Decoded SSH key is not an OpenSSH private key. Check VPS_SSH_KEY_B64 or VPS_SSH_KEY."
+            exit 1
+          }
+          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null || {
+            echo "SSH private key could not be parsed. Check VPS_SSH_KEY_B64 or VPS_SSH_KEY."
+            exit 1
+          }
           ssh-keyscan -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Sync backend source to VPS
         run: |
+          SSH_OPTS="-i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p ${{ secrets.VPS_PORT }}"
           rsync -az --delete \
-            -e "ssh -p ${{ secrets.VPS_PORT }}" \
+            -e "ssh $SSH_OPTS" \
             --exclude ".git" \
             --exclude "node_modules" \
             --exclude "dist" \
@@ -59,7 +75,7 @@ jobs:
 
       - name: Deploy + migrate on VPS
         run: |
-          ssh -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" << 'EOF'
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" << 'EOF'
           set -e
           cd "${{ secrets.API_QA_PATH }}"
           ${{ secrets.API_QA_DEPLOY_COMMAND }}

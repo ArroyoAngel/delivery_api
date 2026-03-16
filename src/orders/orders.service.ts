@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { OrderEntity } from './entities/order.entity';
@@ -22,14 +27,22 @@ export class OrdersService {
     private cfg: SystemConfigService,
   ) {}
 
-  private readonly effectiveStatuses = ['confirmado', 'preparando', 'listo', 'en_camino', 'entregado'];
+  private readonly effectiveStatuses = [
+    'confirmado',
+    'preparando',
+    'listo',
+    'en_camino',
+    'entregado',
+  ];
 
   private buildPaymentReference(scope: 'order' | 'group', id: string): string {
     const prefix = scope === 'group' ? 'GRP' : 'ORD';
     return `${prefix}_${id.replace(/-/g, '').toUpperCase()}`;
   }
 
-  private async resolveRestaurantForAccount(accountId: string): Promise<{ id: string; name: string }> {
+  private async resolveRestaurantForAccount(
+    accountId: string,
+  ): Promise<{ id: string; name: string }> {
     let [restaurant] = await this.dataSource.query(
       `SELECT id, name
        FROM restaurants
@@ -50,7 +63,8 @@ export class OrdersService {
       );
     }
 
-    if (!restaurant) throw new NotFoundException('No tenés un restaurante asignado');
+    if (!restaurant)
+      throw new NotFoundException('No tenés un restaurante asignado');
     return restaurant;
   }
 
@@ -122,7 +136,10 @@ export class OrdersService {
   }
 
   async findMyOrders(userId: string) {
-    const rows = await this.orders.find({ where: { clientId: userId }, order: { createdAt: 'DESC' } });
+    const rows = await this.orders.find({
+      where: { clientId: userId },
+      order: { createdAt: 'DESC' },
+    });
     return Promise.all(
       rows.map(async (o) => {
         const items = await this.dataSource.query(
@@ -142,17 +159,19 @@ export class OrdersService {
   }
 
   async findOne(userId: string, orderId: string, roles: string[] = []) {
-    const isElevated = roles.some((r) =>
-      ['admin', 'superadmin'].includes(r),
-    );
+    const isElevated = roles.some((r) => ['admin', 'superadmin'].includes(r));
 
     // Clientes solo ven sus propias órdenes; roles elevados ven cualquiera
-    const where: any = isElevated ? { id: orderId } : { id: orderId, clientId: userId };
+    const where: any = isElevated
+      ? { id: orderId }
+      : { id: orderId, clientId: userId };
     const order = await this.orders.findOne({ where });
     if (!order) throw new NotFoundException('Orden no encontrada');
 
     // Admin/staff que no sea superadmin: verificar que la orden pertenezca a su restaurante
-    const isSuperAdmin = roles.some((r) => ['superadmin', 'super_admin'].includes(r));
+    const isSuperAdmin = roles.some((r) =>
+      ['superadmin', 'super_admin'].includes(r),
+    );
     if (isElevated && !isSuperAdmin) {
       const [hasAccess] = await this.dataSource.query(
         `SELECT 1 FROM restaurants r
@@ -167,7 +186,8 @@ export class OrdersService {
            )`,
         [order.restaurantId, userId],
       );
-      if (!hasAccess) throw new ForbiddenException('No tenés acceso a esta orden');
+      if (!hasAccess)
+        throw new ForbiddenException('No tenés acceso a esta orden');
     }
 
     const items = await this.dataSource.query(
@@ -180,14 +200,24 @@ export class OrdersService {
       'SELECT name, address FROM restaurants WHERE id = $1',
       [order.restaurantId],
     );
-    return { ...order, items, restaurantName: restaurant?.name ?? '', restaurantAddress: restaurant?.address ?? '' };
+    return {
+      ...order,
+      items,
+      restaurantName: restaurant?.name ?? '',
+      restaurantAddress: restaurant?.address ?? '',
+    };
   }
 
   async create(userId: string, dto: CreateOrderDto) {
     const platformFee = await this.getPlatformServiceFee();
     const saved = await this.dataSource.transaction(async (em) => {
       let subtotal = 0;
-      const validatedItems: { menuItemId: string; quantity: number; unitPrice: number; notes?: string }[] = [];
+      const validatedItems: {
+        menuItemId: string;
+        quantity: number;
+        unitPrice: number;
+        notes?: string;
+      }[] = [];
 
       let orderSize = 0;
       for (const item of dto.items) {
@@ -195,28 +225,44 @@ export class OrdersService {
           'SELECT id, price, is_available, COALESCE(size, 1) AS size, stock, daily_limit, daily_sold FROM menu_items WHERE id = $1',
           [item.menuItemId],
         );
-        if (!rows.length) throw new NotFoundException(`Item ${item.menuItemId} no encontrado`);
+        if (!rows.length)
+          throw new NotFoundException(`Item ${item.menuItemId} no encontrado`);
         const mi = rows[0];
-        if (!mi.is_available) throw new BadRequestException(`Item no disponible`);
+        if (!mi.is_available)
+          throw new BadRequestException(`Item no disponible`);
         // Stock check
         if (mi.stock !== null && mi.stock !== undefined) {
-          if (Number(mi.stock) < item.quantity) throw new BadRequestException(`Stock insuficiente para el item`);
+          if (Number(mi.stock) < item.quantity)
+            throw new BadRequestException(`Stock insuficiente para el item`);
         }
         // Daily limit check
         if (mi.daily_limit !== null && mi.daily_limit !== undefined) {
           const remaining = Number(mi.daily_limit) - Number(mi.daily_sold ?? 0);
-          if (remaining < item.quantity) throw new BadRequestException(`Límite diario alcanzado para el item`);
+          if (remaining < item.quantity)
+            throw new BadRequestException(
+              `Límite diario alcanzado para el item`,
+            );
         }
         const unitPrice = Number(mi.price);
         subtotal += unitPrice * item.quantity;
         orderSize += Number(mi.size) * item.quantity;
-        validatedItems.push({ menuItemId: item.menuItemId, quantity: item.quantity, unitPrice, notes: item.notes });
+        validatedItems.push({
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+          unitPrice,
+          notes: item.notes,
+        });
       }
 
-      const restaurants = await em.query('SELECT delivery_fee FROM restaurants WHERE id = $1', [dto.restaurantId]);
-      if (!restaurants.length) throw new NotFoundException('Restaurante no encontrado');
+      const restaurants = await em.query(
+        'SELECT delivery_fee FROM restaurants WHERE id = $1',
+        [dto.restaurantId],
+      );
+      if (!restaurants.length)
+        throw new NotFoundException('Restaurante no encontrado');
       const deliveryType = dto.deliveryType ?? 'delivery';
-      const baseFee = deliveryType === 'recogida' ? 0 : Number(restaurants[0].delivery_fee);
+      const baseFee =
+        deliveryType === 'recogida' ? 0 : Number(restaurants[0].delivery_fee);
       const deliveryFee = deliveryType === 'express' ? baseFee * 2 : baseFee;
       const total = subtotal + deliveryFee;
 
@@ -231,11 +277,19 @@ export class OrdersService {
           [userId],
         );
         if (defaultAddr) {
-          deliveryAddress = [defaultAddr.street, defaultAddr.number, defaultAddr.floor]
+          deliveryAddress = [
+            defaultAddr.street,
+            defaultAddr.number,
+            defaultAddr.floor,
+          ]
             .filter(Boolean)
             .join(', ');
-          deliveryLat = defaultAddr.latitude ? Number(defaultAddr.latitude) : undefined;
-          deliveryLng = defaultAddr.longitude ? Number(defaultAddr.longitude) : undefined;
+          deliveryLat = defaultAddr.latitude
+            ? Number(defaultAddr.latitude)
+            : undefined;
+          deliveryLng = defaultAddr.longitude
+            ? Number(defaultAddr.longitude)
+            : undefined;
         }
       }
 
@@ -259,7 +313,13 @@ export class OrdersService {
       for (const item of validatedItems) {
         await em.query(
           'INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price, notes) VALUES ($1,$2,$3,$4,$5)',
-          [saved.id, item.menuItemId, item.quantity, item.unitPrice, item.notes ?? null],
+          [
+            saved.id,
+            item.menuItemId,
+            item.quantity,
+            item.unitPrice,
+            item.notes ?? null,
+          ],
         );
         // Decrement stock and daily_sold; auto-disable if stock reaches 0 or daily_limit reached
         await em.query(
@@ -331,7 +391,8 @@ export class OrdersService {
         [ownerId],
       );
     }
-    if (!restaurant) throw new NotFoundException('No tenés un restaurante asignado');
+    if (!restaurant)
+      throw new NotFoundException('No tenés un restaurante asignado');
 
     const rows = await this.orders.find({
       where: { restaurantId: restaurant.id },
@@ -355,7 +416,9 @@ export class OrdersService {
         return {
           ...o,
           items,
-          clientName: client ? `${client.first_name ?? ''} ${client.last_name ?? ''}`.trim() : '',
+          clientName: client
+            ? `${client.first_name ?? ''} ${client.last_name ?? ''}`.trim()
+            : '',
           clientPhone: client?.phone ?? '',
         };
       }),
@@ -377,7 +440,10 @@ export class OrdersService {
     );
   }
 
-  async createRestaurantServiceArea(accountId: string, dto: CreateRestaurantServiceAreaDto) {
+  async createRestaurantServiceArea(
+    accountId: string,
+    dto: CreateRestaurantServiceAreaDto,
+  ) {
     const restaurant = await this.resolveRestaurantForAccount(accountId);
 
     const [row] = await this.dataSource.query(
@@ -396,15 +462,24 @@ export class OrdersService {
     return row;
   }
 
-  async createRestaurantLocalCashOrder(accountId: string, dto: CreateRestaurantLocalOrderDto) {
-    if (!dto.items?.length) throw new BadRequestException('Debes incluir al menos un item');
+  async createRestaurantLocalCashOrder(
+    accountId: string,
+    dto: CreateRestaurantLocalOrderDto,
+  ) {
+    if (!dto.items?.length)
+      throw new BadRequestException('Debes incluir al menos un item');
 
     const restaurant = await this.resolveRestaurantForAccount(accountId);
 
     const saved = await this.dataSource.transaction(async (em) => {
       let subtotal = 0;
       let orderSize = 0;
-      const validatedItems: { menuItemId: string; quantity: number; unitPrice: number; notes?: string }[] = [];
+      const validatedItems: {
+        menuItemId: string;
+        quantity: number;
+        unitPrice: number;
+        notes?: string;
+      }[] = [];
 
       for (const item of dto.items) {
         const rows = await em.query(
@@ -413,22 +488,38 @@ export class OrdersService {
            WHERE id = $1 AND restaurant_id = $2`,
           [item.menuItemId, restaurant.id],
         );
-        if (!rows.length) throw new NotFoundException(`Item ${item.menuItemId} no encontrado en tu restaurante`);
+        if (!rows.length)
+          throw new NotFoundException(
+            `Item ${item.menuItemId} no encontrado en tu restaurante`,
+          );
 
         const mi = rows[0];
-        if (!mi.is_available) throw new BadRequestException('Item no disponible');
-        if (mi.stock !== null && mi.stock !== undefined && Number(mi.stock) < item.quantity) {
+        if (!mi.is_available)
+          throw new BadRequestException('Item no disponible');
+        if (
+          mi.stock !== null &&
+          mi.stock !== undefined &&
+          Number(mi.stock) < item.quantity
+        ) {
           throw new BadRequestException('Stock insuficiente para el item');
         }
         if (mi.daily_limit !== null && mi.daily_limit !== undefined) {
           const remaining = Number(mi.daily_limit) - Number(mi.daily_sold ?? 0);
-          if (remaining < item.quantity) throw new BadRequestException('Límite diario alcanzado para el item');
+          if (remaining < item.quantity)
+            throw new BadRequestException(
+              'Límite diario alcanzado para el item',
+            );
         }
 
         const unitPrice = Number(mi.price);
         subtotal += unitPrice * item.quantity;
         orderSize += Number(mi.size) * item.quantity;
-        validatedItems.push({ menuItemId: item.menuItemId, quantity: item.quantity, unitPrice, notes: item.notes });
+        validatedItems.push({
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+          unitPrice,
+          notes: item.notes,
+        });
       }
 
       const serviceType = dto.serviceType ?? 'local';
@@ -448,7 +539,9 @@ export class OrdersService {
         restaurantId: restaurant.id,
         status: 'confirmado',
         deliveryType: 'recogida',
-        deliveryAddress: isPickup ? 'Recojo en tienda' : `Consumo en local · ${areaText}`,
+        deliveryAddress: isPickup
+          ? 'Recojo en tienda'
+          : `Consumo en local · ${areaText}`,
         subtotal,
         deliveryFee: 0,
         platformFee: 0,
@@ -462,7 +555,13 @@ export class OrdersService {
       for (const item of validatedItems) {
         await em.query(
           'INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price, notes) VALUES ($1,$2,$3,$4,$5)',
-          [persisted.id, item.menuItemId, item.quantity, item.unitPrice, item.notes ?? null],
+          [
+            persisted.id,
+            item.menuItemId,
+            item.quantity,
+            item.unitPrice,
+            item.notes ?? null,
+          ],
         );
         await em.query(
           `UPDATE menu_items SET
@@ -509,7 +608,9 @@ export class OrdersService {
       return { ...persisted, paymentReference };
     });
 
-    this.notifications.notifyRestaurantNewOrder(saved.restaurantId, saved.id).catch(() => null);
+    this.notifications
+      .notifyRestaurantNewOrder(saved.restaurantId, saved.id)
+      .catch(() => null);
 
     return {
       ...saved,
@@ -528,28 +629,51 @@ export class OrdersService {
       const saved = await this.dataSource.transaction(async (em) => {
         let subtotal = 0;
         let orderSize = 0;
-        const validatedItems: { menuItemId: string; quantity: number; unitPrice: number; notes?: string }[] = [];
+        const validatedItems: {
+          menuItemId: string;
+          quantity: number;
+          unitPrice: number;
+          notes?: string;
+        }[] = [];
 
         for (const item of restaurantOrder.items) {
           const rows = await em.query(
             'SELECT id, price, is_available, COALESCE(size, 1) AS size, stock, daily_limit, daily_sold FROM menu_items WHERE id = $1',
             [item.menuItemId],
           );
-          if (!rows.length) throw new NotFoundException(`Item ${item.menuItemId} no encontrado`);
+          if (!rows.length)
+            throw new NotFoundException(
+              `Item ${item.menuItemId} no encontrado`,
+            );
           const mi = rows[0];
-          if (!mi.is_available) throw new BadRequestException(`Item no disponible`);
+          if (!mi.is_available)
+            throw new BadRequestException(`Item no disponible`);
           if (mi.stock !== null && Number(mi.stock) < item.quantity)
             throw new BadRequestException(`Stock insuficiente para el item`);
-          if (mi.daily_limit !== null && Number(mi.daily_limit) - Number(mi.daily_sold ?? 0) < item.quantity)
-            throw new BadRequestException(`Límite diario alcanzado para el item`);
+          if (
+            mi.daily_limit !== null &&
+            Number(mi.daily_limit) - Number(mi.daily_sold ?? 0) < item.quantity
+          )
+            throw new BadRequestException(
+              `Límite diario alcanzado para el item`,
+            );
           const unitPrice = Number(mi.price);
           subtotal += unitPrice * item.quantity;
           orderSize += Number(mi.size) * item.quantity;
-          validatedItems.push({ menuItemId: item.menuItemId, quantity: item.quantity, unitPrice, notes: item.notes });
+          validatedItems.push({
+            menuItemId: item.menuItemId,
+            quantity: item.quantity,
+            unitPrice,
+            notes: item.notes,
+          });
         }
 
-        const restaurants = await em.query('SELECT delivery_fee FROM restaurants WHERE id = $1', [restaurantOrder.restaurantId]);
-        if (!restaurants.length) throw new NotFoundException('Restaurante no encontrado');
+        const restaurants = await em.query(
+          'SELECT delivery_fee FROM restaurants WHERE id = $1',
+          [restaurantOrder.restaurantId],
+        );
+        if (!restaurants.length)
+          throw new NotFoundException('Restaurante no encontrado');
         const deliveryFee = Number(restaurants[0].delivery_fee) * 2; // express = ×2
         const total = subtotal + deliveryFee;
 
@@ -572,7 +696,13 @@ export class OrdersService {
         for (const item of validatedItems) {
           await em.query(
             'INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price, notes) VALUES ($1,$2,$3,$4,$5)',
-            [s.id, item.menuItemId, item.quantity, item.unitPrice, item.notes ?? null],
+            [
+              s.id,
+              item.menuItemId,
+              item.quantity,
+              item.unitPrice,
+              item.notes ?? null,
+            ],
           );
           await em.query(
             `UPDATE menu_items SET
@@ -601,32 +731,56 @@ export class OrdersService {
       scopeType: 'group',
       groupId: group.id,
       payerAccountId: userId,
-      subtotal: createdOrders.reduce((sum, order) => sum + Number(order.subtotal ?? 0), 0),
-      deliveryFee: createdOrders.reduce((sum, order) => sum + Number(order.deliveryFee ?? 0), 0),
+      subtotal: createdOrders.reduce(
+        (sum, order) => sum + Number(order.subtotal ?? 0),
+        0,
+      ),
+      deliveryFee: createdOrders.reduce(
+        (sum, order) => sum + Number(order.deliveryFee ?? 0),
+        0,
+      ),
       platformFee: groupPlatformFee,
       totalAmount: grandTotal + groupPlatformFee,
       metadata: { deliveryType: 'express', orderIds },
     });
-    return { groupId: group.id, total: grandTotal + groupPlatformFee, orders: createdOrders, paymentReference };
+    return {
+      groupId: group.id,
+      total: grandTotal + groupPlatformFee,
+      orders: createdOrders,
+      paymentReference,
+    };
   }
 
-  async confirmGroupPayment(groupId: string, paidAmount?: number, reference?: string, bankProvider?: string, metadata?: Record<string, unknown>) {
+  async confirmGroupPayment(
+    groupId: string,
+    paidAmount?: number,
+    reference?: string,
+    bankProvider?: string,
+    metadata?: Record<string, unknown>,
+  ) {
     const orders = await this.orders.find({ where: { groupId } });
-    if (!orders.length) throw new NotFoundException('Grupo no encontrado o sin órdenes');
+    if (!orders.length)
+      throw new NotFoundException('Grupo no encontrado o sin órdenes');
     const [paymentRow] = await this.dataSource.query(
       `SELECT id, total_amount FROM payments WHERE group_id = $1 ORDER BY requested_at DESC LIMIT 1`,
       [groupId],
     );
-    const groupTotal = paymentRow ? Number(paymentRow.total_amount) : orders.reduce((s, o) => s + Number(o.total), 0);
+    const groupTotal = paymentRow
+      ? Number(paymentRow.total_amount)
+      : orders.reduce((s, o) => s + Number(o.total), 0);
     if (paidAmount !== undefined && paidAmount < groupTotal) {
       throw new BadRequestException(
         `Monto insuficiente: se requieren Bs ${groupTotal.toFixed(2)}, recibido Bs ${paidAmount}`,
       );
     }
-    const unpaid = orders.filter((o) => !['cancelado', 'entregado', 'confirmado'].includes(o.status));
+    const unpaid = orders.filter(
+      (o) => !['cancelado', 'entregado', 'confirmado'].includes(o.status),
+    );
     for (const o of unpaid) {
       await this.orders.update(o.id, { status: 'confirmado' });
-      this.notifications.notifyRestaurantNewOrder(o.restaurantId, o.id).catch(() => null);
+      this.notifications
+        .notifyRestaurantNewOrder(o.restaurantId, o.id)
+        .catch(() => null);
     }
     await this.dataSource.query(
       `UPDATE payments
@@ -636,14 +790,32 @@ export class OrdersService {
            metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
            updated_at = NOW()
        WHERE group_id = $1`,
-      [groupId, bankProvider ?? null, JSON.stringify({ reference, ...(metadata ?? {}) })],
+      [
+        groupId,
+        bankProvider ?? null,
+        JSON.stringify({ reference, ...(metadata ?? {}) }),
+      ],
     );
-    return { groupId, status: 'confirmado', total: groupTotal, orderCount: orders.length };
+    return {
+      groupId,
+      status: 'confirmado',
+      total: groupTotal,
+      orderCount: orders.length,
+    };
   }
 
   async updateStatus(orderId: string, status: string) {
-    const allowed = ['pendiente', 'confirmado', 'preparando', 'listo', 'en_camino', 'entregado', 'cancelado'];
-    if (!allowed.includes(status)) throw new BadRequestException(`Estado inválido: ${status}`);
+    const allowed = [
+      'pendiente',
+      'confirmado',
+      'preparando',
+      'listo',
+      'en_camino',
+      'entregado',
+      'cancelado',
+    ];
+    if (!allowed.includes(status))
+      throw new BadRequestException(`Estado inválido: ${status}`);
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     await this.orders.update(orderId, { status });
@@ -659,33 +831,49 @@ export class OrdersService {
   }
 
   async cancelOrder(userId: string, orderId: string) {
-    const order = await this.orders.findOne({ where: { id: orderId, clientId: userId } });
+    const order = await this.orders.findOne({
+      where: { id: orderId, clientId: userId },
+    });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (order.status !== 'pendiente') {
-      throw new ForbiddenException(`No se puede cancelar una orden con estado '${order.status}'`);
+      throw new ForbiddenException(
+        `No se puede cancelar una orden con estado '${order.status}'`,
+      );
     }
     await this.orders.update(orderId, { status: 'cancelado' });
     return { id: orderId, status: 'cancelado' };
   }
 
-  async confirmPayment(orderId: string, paidAmount?: number, reference?: string, bankProvider?: string, metadata?: Record<string, unknown>) {
+  async confirmPayment(
+    orderId: string,
+    paidAmount?: number,
+    reference?: string,
+    bankProvider?: string,
+    metadata?: Record<string, unknown>,
+  ) {
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (['cancelado', 'entregado'].includes(order.status)) {
-      throw new ForbiddenException(`No se puede confirmar pago para orden con estado '${order.status}'`);
+      throw new ForbiddenException(
+        `No se puede confirmar pago para orden con estado '${order.status}'`,
+      );
     }
     const [paymentRow] = await this.dataSource.query(
       `SELECT total_amount FROM payments WHERE order_id = $1 ORDER BY requested_at DESC LIMIT 1`,
       [orderId],
     );
-    const targetTotal = paymentRow ? Number(paymentRow.total_amount) : Number(order.total);
+    const targetTotal = paymentRow
+      ? Number(paymentRow.total_amount)
+      : Number(order.total);
     if (paidAmount !== undefined && paidAmount < targetTotal) {
       throw new BadRequestException(
         `Monto insuficiente: se requieren Bs ${targetTotal}, recibido Bs ${paidAmount}`,
       );
     }
     await this.orders.update(orderId, { status: 'confirmado' });
-    this.notifications.notifyRestaurantNewOrder(order.restaurantId, orderId).catch(() => null);
+    this.notifications
+      .notifyRestaurantNewOrder(order.restaurantId, orderId)
+      .catch(() => null);
     await this.dataSource.query(
       `UPDATE payments
        SET status = 'confirmed',
@@ -694,9 +882,18 @@ export class OrdersService {
            metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
            updated_at = NOW()
        WHERE order_id = $1`,
-      [orderId, bankProvider ?? null, JSON.stringify({ reference, ...(metadata ?? {}) })],
+      [
+        orderId,
+        bankProvider ?? null,
+        JSON.stringify({ reference, ...(metadata ?? {}) }),
+      ],
     );
-    return { id: orderId, status: 'confirmado', paidAt: new Date().toISOString(), total: targetTotal };
+    return {
+      id: orderId,
+      status: 'confirmado',
+      paidAt: new Date().toISOString(),
+      total: targetTotal,
+    };
   }
 
   async confirmPaymentByReference(
@@ -712,9 +909,22 @@ export class OrdersService {
     );
     if (!payment) throw new NotFoundException('Pago no encontrado');
 
-    const result = payment.scope_type === 'group'
-      ? await this.confirmGroupPayment(payment.group_id, paidAmount, reference, bankProvider, metadata)
-      : await this.confirmPayment(payment.order_id, paidAmount, reference, bankProvider, metadata);
+    const result =
+      payment.scope_type === 'group'
+        ? await this.confirmGroupPayment(
+            payment.group_id,
+            paidAmount,
+            reference,
+            bankProvider,
+            metadata,
+          )
+        : await this.confirmPayment(
+            payment.order_id,
+            paidAmount,
+            reference,
+            bankProvider,
+            metadata,
+          );
 
     await this.dataSource.query(
       `UPDATE payments
@@ -798,18 +1008,18 @@ export class OrdersService {
       ordersToday: r.orders_today,
       revenueToday: Number(r.revenue_today),
       byType: [
-        { type: 'Delivery',  count: r.delivery_count },
-        { type: 'Recogida',  count: r.recogida_count },
-        { type: 'Express',   count: r.express_count  },
+        { type: 'Delivery', count: r.delivery_count },
+        { type: 'Recogida', count: r.recogida_count },
+        { type: 'Express', count: r.express_count },
       ],
       byStatus: [
-        { status: 'Pendiente',  count: r.s_pendiente  },
+        { status: 'Pendiente', count: r.s_pendiente },
         { status: 'Confirmado', count: r.s_confirmado },
         { status: 'Preparando', count: r.s_preparando },
-        { status: 'Listo',      count: r.s_listo      },
-        { status: 'En camino',  count: r.s_en_camino  },
-        { status: 'Entregado',  count: r.s_entregado  },
-        { status: 'Cancelado',  count: r.s_cancelado  },
+        { status: 'Listo', count: r.s_listo },
+        { status: 'En camino', count: r.s_en_camino },
+        { status: 'Entregado', count: r.s_entregado },
+        { status: 'Cancelado', count: r.s_cancelado },
       ].filter((s) => s.count > 0),
     };
   }

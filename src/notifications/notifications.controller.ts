@@ -1,4 +1,15 @@
-import { Controller, Post, Delete, Get, Patch, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Delete,
+  Get,
+  Patch,
+  Body,
+  Param,
+  Query,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { NotificationsService } from './notifications.service';
@@ -18,11 +29,17 @@ export class NotificationsController {
     @Request() req: any,
     @Body() body: { token: string; platform?: string },
   ) {
-    return this.notifications.registerToken(req.user.id, body.token, body.platform ?? 'android');
+    return this.notifications.registerToken(
+      req.user.id,
+      body.token,
+      body.platform ?? 'android',
+    );
   }
 
   @Delete('token')
-  @ApiOperation({ summary: 'Eliminar todos los tokens FCM del usuario (logout)' })
+  @ApiOperation({
+    summary: 'Eliminar todos los tokens FCM del usuario (logout)',
+  })
   unregister(@Request() req: any) {
     return this.notifications.unregisterAllForUser(req.user.id);
   }

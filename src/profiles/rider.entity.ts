@@ -18,8 +18,10 @@ export class RiderEntity {
 
   @Column({ name: 'vehicle_type', nullable: true }) vehicleType: string; // moto | bici | auto
   @Column({ name: 'is_available', default: false }) isAvailable: boolean;
-  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true }) lat: number;
-  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true }) lng: number;
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  lat: number;
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  lng: number;
 
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
 }

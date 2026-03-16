@@ -208,7 +208,8 @@ export class PaymentsAdminService {
     return {
       restaurantId,
       ...income,
-      pending_withdrawals_amount: pendingWithdrawals?.pending_withdrawals_amount ?? '0',
+      pending_withdrawals_amount:
+        pendingWithdrawals?.pending_withdrawals_amount ?? '0',
     };
   }
 

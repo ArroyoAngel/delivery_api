@@ -1,4 +1,10 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { RestaurantEntity } from './restaurant.entity';
 
 /**
@@ -19,9 +25,13 @@ export class RestaurantScheduleEntity {
   /** 0 = Domingo, 1 = Lunes … 6 = Sábado */
   @Column({ name: 'day_of_week', type: 'smallint' }) dayOfWeek: number;
 
-  @Column({ name: 'open_time', type: 'time', nullable: true }) openTime: string | null;
+  @Column({ name: 'open_time', type: 'time', nullable: true }) openTime:
+    | string
+    | null;
 
-  @Column({ name: 'close_time', type: 'time', nullable: true }) closeTime: string | null;
+  @Column({ name: 'close_time', type: 'time', nullable: true }) closeTime:
+    | string
+    | null;
 
   @Column({ name: 'is_closed', default: false }) isClosed: boolean;
 }

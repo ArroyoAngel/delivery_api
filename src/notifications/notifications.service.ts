@@ -24,13 +24,19 @@ export class NotificationsService implements OnModuleInit {
     const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
     if (!projectId || !clientEmail || !privateKey) {
-      this.logger.warn('Firebase credentials not configured — push notifications disabled');
+      this.logger.warn(
+        'Firebase credentials not configured — push notifications disabled',
+      );
       return;
     }
 
     try {
       this.app = admin.initializeApp({
-        credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
+        credential: admin.credential.cert({
+          projectId,
+          clientEmail,
+          privateKey,
+        }),
       });
       this.logger.log('Firebase Admin initialized ✓');
     } catch (e) {
@@ -83,26 +89,49 @@ export class NotificationsService implements OnModuleInit {
 
   // ── Send helpers ──────────────────────────────────────────────────────────
 
-  async sendToUser(userId: string, notification: { title: string; body: string }, data?: Record<string, string>) {
+  async sendToUser(
+    userId: string,
+    notification: { title: string; body: string },
+    data?: Record<string, string>,
+  ) {
     const rows = await this.tokens.find({ where: { userId } });
     if (!rows.length) return;
-    await this._sendToTokens(rows.map((t) => t.token), notification, data);
+    await this._sendToTokens(
+      rows.map((t) => t.token),
+      notification,
+      data,
+    );
   }
 
-  async sendToUsers(userIds: string[], notification: { title: string; body: string }, data?: Record<string, string>) {
+  async sendToUsers(
+    userIds: string[],
+    notification: { title: string; body: string },
+    data?: Record<string, string>,
+  ) {
     if (!userIds.length) return;
     const rows: { token: string }[] = await this.dataSource.query(
       `SELECT token FROM device_tokens WHERE user_id = ANY($1)`,
       [userIds],
     );
-    await this._sendToTokens(rows.map((r) => r.token), notification, data);
+    await this._sendToTokens(
+      rows.map((r) => r.token),
+      notification,
+      data,
+    );
   }
 
-  async sendToAllRiders(notification: { title: string; body: string }, data?: Record<string, string>) {
+  async sendToAllRiders(
+    notification: { title: string; body: string },
+    data?: Record<string, string>,
+  ) {
     const rows: { account_id: string }[] = await this.dataSource.query(
       `SELECT p.account_id FROM riders r JOIN profiles p ON p.id = r.profile_id`,
     );
-    await this.sendToUsers(rows.map((r) => r.account_id), notification, data);
+    await this.sendToUsers(
+      rows.map((r) => r.account_id),
+      notification,
+      data,
+    );
   }
 
   // ── Business-event helpers ─────────────────────────────────────────────
@@ -119,11 +148,18 @@ export class NotificationsService implements OnModuleInit {
       body: 'Tienes un nuevo pedido esperando confirmación.',
     };
     await this._saveForUsers(ownerIds, notification, 'new_order', { orderId });
-    await this.sendToUsers(ownerIds, notification, { orderId, type: 'new_order' });
+    await this.sendToUsers(ownerIds, notification, {
+      orderId,
+      type: 'new_order',
+    });
   }
 
   /** Notifica al cliente sobre el cambio de estado de su pedido */
-  async notifyClientOrderStatus(clientId: string, status: string, restaurantName = '') {
+  async notifyClientOrderStatus(
+    clientId: string,
+    status: string,
+    restaurantName = '',
+  ) {
     const messages: Record<string, { title: string; body: string }> = {
       preparando: {
         title: '🍳 Preparando tu pedido',
@@ -159,8 +195,13 @@ export class NotificationsService implements OnModuleInit {
       `SELECT p.account_id FROM riders r JOIN profiles p ON p.id = r.profile_id`,
     );
     const riderIds = rows.map((r) => r.account_id);
-    await this._saveForUsers(riderIds, notification, 'group_available', { groupId });
-    await this.sendToAllRiders(notification, { groupId, type: 'group_available' });
+    await this._saveForUsers(riderIds, notification, 'group_available', {
+      groupId,
+    });
+    await this.sendToAllRiders(notification, {
+      groupId,
+      type: 'group_available',
+    });
   }
 
   // ── Internal helpers ───────────────────────────────────────────────────
@@ -173,7 +214,13 @@ export class NotificationsService implements OnModuleInit {
   ) {
     if (!userIds.length) return;
     const records = userIds.map((userId) =>
-      this.notifRepo.create({ userId, title: notification.title, body: notification.body, type, data }),
+      this.notifRepo.create({
+        userId,
+        title: notification.title,
+        body: notification.body,
+        type,
+        data,
+      }),
     );
     await this.notifRepo.save(records);
   }
@@ -228,7 +275,8 @@ export class NotificationsService implements OnModuleInit {
 
   private _chunk<T>(arr: T[], size: number): T[][] {
     const chunks: T[][] = [];
-    for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+    for (let i = 0; i < arr.length; i += size)
+      chunks.push(arr.slice(i, i + size));
     return chunks;
   }
 }
