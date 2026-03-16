@@ -60,7 +60,18 @@ jobs:
             echo "SSH private key could not be parsed. Check VPS_SSH_KEY_B64 or VPS_SSH_KEY."
             exit 1
           }
-          ssh-keyscan -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+          [ -n "${{ secrets.VPS_HOST }}" ] || {
+            echo "VPS_HOST is empty or not defined in the qa environment."
+            exit 1
+          }
+          [ -n "${{ secrets.VPS_PORT }}" ] || {
+            echo "VPS_PORT is empty or not defined in the qa environment."
+            exit 1
+          }
+          ssh-keyscan -T 15 -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts || {
+            echo "ssh-keyscan failed for ${VPS_HOST:-configured host}:${VPS_PORT:-configured port}. Check VPS_HOST, VPS_PORT, firewall, or server availability."
+            exit 1
+          }
 
       - name: Sync backend source to VPS
         run: |
