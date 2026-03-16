@@ -14,4 +14,4 @@ COPY --from=builder /app/dist ./dist
 COPY database ./database
 COPY tsconfig.json tsconfig.typeorm.json ormconfig.ts ormconfig-seed.ts ./
 EXPOSE 3002
-CMD ["sh", "-c", "npm run setup && node dist/src/main.js"]
+CMD ["sh", "-c", "npm run setup && node dist/main.js"]

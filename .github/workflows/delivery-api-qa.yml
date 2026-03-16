@@ -115,6 +115,11 @@ jobs:
             echo "Missing /opt/yaya-eats/delivery_api/.env on VPS. Create it manually on server."
             exit 1
           }
+          test -f /opt/yaya-eats/delivery_api/Dockerfile || {
+            echo "Missing /opt/yaya-eats/delivery_api/Dockerfile on VPS."
+            exit 1
+          }
+          cp /opt/yaya-eats/delivery_api/Dockerfile /opt/yaya-eats/delivery_api/DockerFile
           cd /opt/yaya-eats
           docker compose build api
           docker compose up -d api
