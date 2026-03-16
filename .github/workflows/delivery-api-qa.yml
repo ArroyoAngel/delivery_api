@@ -1,0 +1,73 @@
+name: delivery_api QA
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: delivery-api-qa
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  deploy_qa:
+    name: Deploy API to Hostinger VPS (QA)
+    needs: verify
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    environment: qa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync backend source to VPS
+        run: |
+          rsync -az --delete \
+            -e "ssh -p ${{ secrets.VPS_PORT }}" \
+            --exclude ".git" \
+            --exclude "node_modules" \
+            --exclude "dist" \
+            ./ \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.API_QA_PATH }}/"
+
+      - name: Deploy + migrate on VPS
+        run: |
+          ssh -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" << 'EOF'
+          set -e
+          cd "${{ secrets.API_QA_PATH }}"
+          ${{ secrets.API_QA_DEPLOY_COMMAND }}
+          ${{ secrets.API_QA_MIGRATE_COMMAND }}
+          EOF
+
+      - name: API smoke check
+        if: ${{ secrets.API_QA_HEALTH_URL != '' }}
+        run: |
+          echo "Checking ${{ secrets.API_QA_HEALTH_URL }}"
+          curl -fSL --retry 8 --retry-delay 5 "${{ secrets.API_QA_HEALTH_URL }}" > /dev/null
