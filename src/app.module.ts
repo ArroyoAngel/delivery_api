@@ -11,6 +11,7 @@ import { DeliveryGroupsModule } from './delivery-groups/delivery-groups.module';
 import { AiModule } from './ai/ai.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
+import { PaymentsModule } from './payments/payments.module';
 import { AuthorizationModule } from './authorization/authorization.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AuthZModule, AUTHZ_ENFORCER } from 'nest-authz';
@@ -90,6 +91,7 @@ m = r.sub == p.sub && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act) && p.e
     AiModule,
     UsersModule,
     RolesModule,
+    PaymentsModule,
     NotificationsModule,
   ],
 })

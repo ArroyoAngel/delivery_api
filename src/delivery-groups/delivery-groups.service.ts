@@ -111,6 +111,35 @@ export class DeliveryGroupsService {
     return row?.id ?? null;
   }
 
+  private async assertRestaurantOrderManageAccess(orderId: string, accountId: string): Promise<void> {
+    const [order] = await this.dataSource.query(
+      `SELECT restaurant_id FROM orders WHERE id = $1 LIMIT 1`,
+      [orderId],
+    );
+    if (!order?.restaurant_id) throw new NotFoundException('Orden no encontrada');
+
+    const [owner] = await this.dataSource.query(
+      `SELECT 1
+       FROM restaurants
+       WHERE id = $1 AND owner_account_id = $2`,
+      [order.restaurant_id, accountId],
+    );
+    if (owner) return;
+
+    const [staff] = await this.dataSource.query(
+      `SELECT 1
+       FROM admins a
+       JOIN profiles p ON p.id = a.profile_id
+       WHERE a.restaurant_id = $1
+         AND p.account_id = $2
+         AND 'manage_orders' = ANY(a.granted_permissions)`,
+      [order.restaurant_id, accountId],
+    );
+    if (!staff) {
+      throw new ForbiddenException('No tenés permisos para gestionar este pedido');
+    }
+  }
+
   async getAllRiders() {
     return this.dataSource.query(`
       SELECT
@@ -265,7 +294,8 @@ export class DeliveryGroupsService {
     return { id: orderId, status: 'en_camino' };
   }
 
-  async markOrderPreparing(orderId: string) {
+  async markOrderPreparing(orderId: string, accountId: string) {
+    await this.assertRestaurantOrderManageAccess(orderId, accountId);
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (!['confirmado', 'pendiente'].includes(order.status)) {
@@ -337,7 +367,8 @@ export class DeliveryGroupsService {
     }
   }
 
-  async markOrderReady(orderId: string) {
+  async markOrderReady(orderId: string, accountId: string) {
+    await this.assertRestaurantOrderManageAccess(orderId, accountId);
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (!['preparando', 'confirmado'].includes(order.status)) {
@@ -359,6 +390,7 @@ export class DeliveryGroupsService {
   @Cron(CronExpression.EVERY_MINUTE)
   async forceGroupExpiredOrders(): Promise<void> {
     const waitMinutes = await this.cfg.getNumber('group_wait_minutes', 5);
+    const radiusMeters = await this.cfg.getNumber('nearby_restaurant_radius_meters', 200);
     const cutoff = new Date(Date.now() - waitMinutes * 60 * 1000);
 
     // Intentar agrupar primero (puede que nuevos pedidos llegaron)
@@ -367,18 +399,66 @@ export class DeliveryGroupsService {
     // Pedidos que siguen sin grupo después del tiempo de espera
     const expired = await this.orders.find({
       where: { status: 'listo', groupId: IsNull(), updatedAt: LessThan(cutoff) },
+      order: { createdAt: 'ASC' },
     });
 
     if (expired.length === 0) return;
 
-    this.logger.log(`Forzando ${expired.length} pedido(s) a grupos individuales`);
+    const restaurantIds = [...new Set(expired.map((o) => o.restaurantId))];
+    const restaurants: { id: string; latitude: number; longitude: number }[] =
+      restaurantIds.length > 0
+        ? await this.dataSource.query(
+            `SELECT id, latitude, longitude FROM restaurants WHERE id = ANY($1)`,
+            [restaurantIds],
+          )
+        : [];
+    const restMap = new Map(restaurants.map((r) => [r.id, r]));
 
-    for (const order of expired) {
-      const soloGroup = await this.groups.save(
-        this.groups.create({ status: 'available' }),
+    const assigned = new Set<string>();
+    this.logger.log(`Forzando despacho de ${expired.length} pedido(s) listo con espera vencida`);
+
+    for (const seed of expired) {
+      if (assigned.has(seed.id)) continue;
+
+      const group: OrderEntity[] = [seed];
+      assigned.add(seed.id);
+
+      // 1) Mismo restaurante
+      for (const o of expired) {
+        if (assigned.has(o.id) || o.restaurantId !== seed.restaurantId) continue;
+        group.push(o);
+        assigned.add(o.id);
+      }
+
+      // 2) Restaurantes cercanos (sin exigir cantidad mínima en timeout)
+      const seedRest = restMap.get(seed.restaurantId);
+      if (seedRest) {
+        for (const o of expired) {
+          if (assigned.has(o.id)) continue;
+          const otherRest = restMap.get(o.restaurantId);
+          if (!otherRest) continue;
+          const dist = haversineMeters(
+            Number(seedRest.latitude),
+            Number(seedRest.longitude),
+            Number(otherRest.latitude),
+            Number(otherRest.longitude),
+          );
+          if (dist <= radiusMeters) {
+            group.push(o);
+            assigned.add(o.id);
+          }
+        }
+      }
+
+      const forcedGroup = await this.groups.save(this.groups.create({ status: 'available' }));
+      for (const o of group) {
+        await this.orders.update(o.id, { groupId: forcedGroup.id });
+      }
+      this.logger.log(
+        `Grupo forzado ${forcedGroup.id} creado con ${group.length} pedido(s): ${group
+          .map((o) => o.id)
+          .join(', ')}`,
       );
-      await this.orders.update(order.id, { groupId: soloGroup.id });
-      this.logger.log(`Orden ${order.id} enviada sola en grupo ${soloGroup.id}`);
     }
   }
 

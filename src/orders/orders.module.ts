@@ -7,9 +7,10 @@ import { OrderEntity } from './entities/order.entity';
 import { AuthModule } from '../auth/auth.module';
 import { DeliveryGroupsModule } from '../delivery-groups/delivery-groups.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { SystemConfigModule } from '../system-config/system-config.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([OrderEntity]), AuthModule, DeliveryGroupsModule, NotificationsModule],
+  imports: [TypeOrmModule.forFeature([OrderEntity]), AuthModule, DeliveryGroupsModule, NotificationsModule, SystemConfigModule],
   controllers: [OrdersController, PaymentsController],
   providers: [OrdersService],
 })

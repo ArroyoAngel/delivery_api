@@ -24,6 +24,16 @@ const DEFAULTS: { key: string; value: string; description: string }[] = [
     value: '5',
     description: 'Intervalo en segundos entre puntos GPS del repartidor (1–300). Se aplica al iniciar sesión de tracking.',
   },
+  {
+    key: 'platform_service_fee',
+    value: '0.00',
+    description: 'Cargo fijo de plataforma aplicado al total del pago.',
+  },
+  {
+    key: 'minimum_withdrawal_amount',
+    value: '20.00',
+    description: 'Monto mínimo requerido para solicitar un retiro.',
+  },
 ];
 
 @Injectable()

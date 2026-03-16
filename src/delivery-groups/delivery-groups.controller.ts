@@ -86,9 +86,4 @@ export class DeliveryGroupsController {
     return this.service.markOrderDelivered(req.user.id, orderId);
   }
 
-  @Put('orders/:orderId/ready')
-  @ApiOperation({ summary: 'Admin marca pedido listo para recoger — dispara agrupamiento' })
-  async markReady(@Param('orderId') orderId: string) {
-    return this.service.markOrderReady(orderId);
-  }
 }

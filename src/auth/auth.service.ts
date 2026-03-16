@@ -99,6 +99,15 @@ export class AuthService {
     if (perms.includes('manage_restaurant') || perms.includes('manage_menu') || perms.includes('manage_schedule')) {
       routes.add('/dashboard/my-restaurant');
     }
+    if (
+      perms.includes('manage_restaurant') ||
+      perms.includes('manage_orders') ||
+      perms.includes('view_orders')
+    ) {
+      routes.add('/dashboard/my-restaurant/income');
+      routes.add('/dashboard/my-restaurant/bank-accounts');
+      routes.add('/dashboard/my-restaurant/withdrawals');
+    }
     if (perms.includes('manage_staff')) {
       routes.add('/dashboard/staff');
     }

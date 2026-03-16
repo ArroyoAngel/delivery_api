@@ -35,7 +35,6 @@ export class CasbinRules1742500000004 implements MigrationInterface {
       [AD, '/api/orders/admin/all',       'GET'],
       [SA, '/api/orders/admin/stats',     'GET'],
       [SA, '/api/orders/:id/status',      'PUT'],
-      [AD, '/api/orders/:id/status',      'PUT'],
       [SA, '/api/orders/restaurant/mine', 'GET'],
       [AD, '/api/orders/restaurant/mine', 'GET'],
 
@@ -77,8 +76,6 @@ export class CasbinRules1742500000004 implements MigrationInterface {
       [SA, '/api/rider/groups/:id/accept',         'POST'],
       [RI, '/api/rider/groups/:id/accept',         'POST'],
       [RI, '/api/rider/orders/:orderId/delivered', 'PUT'],
-      [SA, '/api/rider/orders/:orderId/ready',     'PUT'],
-      [AD, '/api/rider/orders/:orderId/ready',     'PUT'],
 
       // System Config
       [SA, '/api/config/:key', 'PUT'],
@@ -91,6 +88,15 @@ export class CasbinRules1742500000004 implements MigrationInterface {
       // Roles
       [SA, '/api/roles/permissions',        'GET'],
       [SA, '/api/roles/:role/permissions',  'PUT'],
+
+      // Finanzas admin
+      [SA, '/api/payments/admin/summary',      'GET'],
+      [SA, '/api/payments/admin/list',         'GET'],
+      [SA, '/api/payments/admin/bank-accounts','GET'],
+      [SA, '/api/payments/admin/withdrawals',  'GET'],
+      [AD, '/api/payments/my/income',          'GET'],
+      [AD, '/api/payments/my/bank-accounts',   'GET'],
+      [AD, '/api/payments/my/withdrawals',     'GET'],
     ];
 
     for (const [role, route, actions] of backend) {
@@ -124,6 +130,14 @@ export class CasbinRules1742500000004 implements MigrationInterface {
       [SA, '/dashboard/users'],
       [SA, '/dashboard/config'],
       [SA, '/dashboard/roles'],
+
+      // Finanzas admin
+      [SA, '/dashboard/payments'],
+      [SA, '/dashboard/bank-accounts'],
+      [SA, '/dashboard/withdrawals'],
+      [AD, '/dashboard/my-restaurant/income'],
+      [AD, '/dashboard/my-restaurant/bank-accounts'],
+      [AD, '/dashboard/my-restaurant/withdrawals'],
 
       // Repartidores: superadmin y admin
       [SA, '/dashboard/riders'],

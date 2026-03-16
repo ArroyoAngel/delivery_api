@@ -1,4 +1,4 @@
-import { Controller, Post, Param, Body, Headers, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Controller, Post, Body, Headers, UnauthorizedException } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 
@@ -16,25 +16,14 @@ export class PaymentsController {
     if (secret !== expected) throw new UnauthorizedException('Secret de pago inválido');
   }
 
-  @Post('order/:id')
-  @ApiOperation({ summary: 'Confirmar pago de un pedido individual (webhook BNB)' })
-  confirmOrderPayment(
-    @Param('id') id: string,
+  @Post('confirm')
+  @ApiOperation({ summary: 'Confirmar pago por referencia unificada (orden o grupo)' })
+  confirmByReference(
     @Headers('x-payment-secret') secret: string,
-    @Body() body: { reference?: string; paidAmount?: number },
+    @Body() body: { reference?: string; paidAmount?: number; bankTransactionId?: string; bankProvider?: string },
   ) {
     this.checkSecret(secret);
-    return this.orders.confirmPayment(id, body?.paidAmount);
-  }
-
-  @Post('group/:groupId')
-  @ApiOperation({ summary: 'Confirmar pago de un grupo express (webhook BNB)' })
-  confirmGroupPayment(
-    @Param('groupId') groupId: string,
-    @Headers('x-payment-secret') secret: string,
-    @Body() body: { paidAmount?: number },
-  ) {
-    this.checkSecret(secret);
-    return this.orders.confirmGroupPayment(groupId, body?.paidAmount);
+    if (!body?.reference) throw new BadRequestException('reference es requerido');
+    return this.orders.confirmPaymentByReference(body.reference, body?.paidAmount, body?.bankTransactionId, body?.bankProvider, body);
   }
 }

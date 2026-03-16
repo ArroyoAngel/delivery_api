@@ -5,6 +5,7 @@ import { OrderEntity } from './entities/order.entity';
 import { CreateOrderDto, ExpressCheckoutDto } from './dto/create-order.dto';
 import { DeliveryGroupsService } from '../delivery-groups/delivery-groups.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SystemConfigService } from '../system-config/system-config.service';
 
 @Injectable()
 export class OrdersService {
@@ -13,7 +14,57 @@ export class OrdersService {
     private dataSource: DataSource,
     private deliveryGroups: DeliveryGroupsService,
     private notifications: NotificationsService,
+    private cfg: SystemConfigService,
   ) {}
+
+  private buildPaymentReference(scope: 'order' | 'group', id: string): string {
+    const prefix = scope === 'group' ? 'GRP' : 'ORD';
+    return `${prefix}_${id.replace(/-/g, '').toUpperCase()}`;
+  }
+
+  private async getPlatformServiceFee(): Promise<number> {
+    const fee = await this.cfg.getNumber('platform_service_fee', 0);
+    return Number.isFinite(fee) && fee > 0 ? fee : 0;
+  }
+
+  private async createPendingPayment(params: {
+    reference: string;
+    scopeType: 'order' | 'group';
+    payerAccountId: string;
+    subtotal: number;
+    deliveryFee: number;
+    platformFee: number;
+    totalAmount: number;
+    orderId?: string;
+    groupId?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    await this.dataSource.query(
+      `INSERT INTO payments (
+          reference, scope_type, order_id, group_id, payer_account_id,
+          subtotal, delivery_fee, platform_fee, total_amount, metadata
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+       ON CONFLICT (reference) DO UPDATE SET
+          subtotal = EXCLUDED.subtotal,
+          delivery_fee = EXCLUDED.delivery_fee,
+          platform_fee = EXCLUDED.platform_fee,
+          total_amount = EXCLUDED.total_amount,
+          metadata = EXCLUDED.metadata,
+          updated_at = NOW()`,
+      [
+        params.reference,
+        params.scopeType,
+        params.orderId ?? null,
+        params.groupId ?? null,
+        params.payerAccountId,
+        params.subtotal,
+        params.deliveryFee,
+        params.platformFee,
+        params.totalAmount,
+        JSON.stringify(params.metadata ?? {}),
+      ],
+    );
+  }
 
   async findMyOrders(userId: string) {
     const rows = await this.orders.find({ where: { clientId: userId }, order: { createdAt: 'DESC' } });
@@ -78,6 +129,7 @@ export class OrdersService {
   }
 
   async create(userId: string, dto: CreateOrderDto) {
+    const platformFee = await this.getPlatformServiceFee();
     const saved = await this.dataSource.transaction(async (em) => {
       let subtotal = 0;
       const validatedItems: { menuItemId: string; quantity: number; unitPrice: number; notes?: string }[] = [];
@@ -140,7 +192,9 @@ export class OrdersService {
         deliveryAddress,
         deliveryLat,
         deliveryLng,
+        subtotal,
         deliveryFee,
+        platformFee: deliveryType === 'delivery' ? platformFee : 0,
         total,
         orderSize,
         notes: dto.notes,
@@ -170,7 +224,37 @@ export class OrdersService {
     });
 
     if (saved.deliveryType === 'express') {
-      await this.deliveryGroups.createGroupForOrders([saved.id]);
+      const group = await this.deliveryGroups.createGroupForOrders([saved.id]);
+      const paymentReference = this.buildPaymentReference('group', group.id);
+      await this.createPendingPayment({
+        reference: paymentReference,
+        scopeType: 'group',
+        groupId: group.id,
+        payerAccountId: userId,
+        subtotal: Number(saved.subtotal ?? 0),
+        deliveryFee: Number(saved.deliveryFee ?? 0),
+        platformFee,
+        totalAmount: Number(saved.total ?? 0) + platformFee,
+        metadata: { deliveryType: 'express', orderIds: [saved.id] },
+      });
+      return { ...saved, groupId: group.id, paymentReference };
+    }
+
+    if (saved.deliveryType === 'delivery') {
+      const paymentReference = this.buildPaymentReference('order', saved.id);
+      await this.orders.update(saved.id, { paymentReference });
+      await this.createPendingPayment({
+        reference: paymentReference,
+        scopeType: 'order',
+        orderId: saved.id,
+        payerAccountId: userId,
+        subtotal: Number(saved.subtotal ?? 0),
+        deliveryFee: Number(saved.deliveryFee ?? 0),
+        platformFee,
+        totalAmount: Number(saved.total ?? 0) + platformFee,
+        metadata: { deliveryType: 'delivery' },
+      });
+      return { ...saved, paymentReference, platformFee };
     }
 
     return saved;
@@ -229,6 +313,7 @@ export class OrdersService {
     const orderIds: string[] = [];
     let grandTotal = 0;
     const createdOrders: OrderEntity[] = [];
+    const groupPlatformFee = await this.getPlatformServiceFee();
 
     for (const restaurantOrder of dto.orders) {
       const saved = await this.dataSource.transaction(async (em) => {
@@ -267,7 +352,9 @@ export class OrdersService {
           deliveryAddress: dto.deliveryAddress,
           deliveryLat: dto.deliveryLat,
           deliveryLng: dto.deliveryLng,
+          subtotal,
           deliveryFee,
+          platformFee: 0,
           total,
           orderSize,
           notes: restaurantOrder.notes,
@@ -299,13 +386,29 @@ export class OrdersService {
     }
 
     const group = await this.deliveryGroups.createGroupForOrders(orderIds);
-    return { groupId: group.id, total: grandTotal, orders: createdOrders };
+    const paymentReference = this.buildPaymentReference('group', group.id);
+    await this.createPendingPayment({
+      reference: paymentReference,
+      scopeType: 'group',
+      groupId: group.id,
+      payerAccountId: userId,
+      subtotal: createdOrders.reduce((sum, order) => sum + Number(order.subtotal ?? 0), 0),
+      deliveryFee: createdOrders.reduce((sum, order) => sum + Number(order.deliveryFee ?? 0), 0),
+      platformFee: groupPlatformFee,
+      totalAmount: grandTotal + groupPlatformFee,
+      metadata: { deliveryType: 'express', orderIds },
+    });
+    return { groupId: group.id, total: grandTotal + groupPlatformFee, orders: createdOrders, paymentReference };
   }
 
-  async confirmGroupPayment(groupId: string, paidAmount?: number) {
+  async confirmGroupPayment(groupId: string, paidAmount?: number, reference?: string, bankProvider?: string, metadata?: Record<string, unknown>) {
     const orders = await this.orders.find({ where: { groupId } });
     if (!orders.length) throw new NotFoundException('Grupo no encontrado o sin órdenes');
-    const groupTotal = orders.reduce((s, o) => s + Number(o.total), 0);
+    const [paymentRow] = await this.dataSource.query(
+      `SELECT id, total_amount FROM payments WHERE group_id = $1 ORDER BY requested_at DESC LIMIT 1`,
+      [groupId],
+    );
+    const groupTotal = paymentRow ? Number(paymentRow.total_amount) : orders.reduce((s, o) => s + Number(o.total), 0);
     if (paidAmount !== undefined && paidAmount < groupTotal) {
       throw new BadRequestException(
         `Monto insuficiente: se requieren Bs ${groupTotal.toFixed(2)}, recibido Bs ${paidAmount}`,
@@ -316,6 +419,16 @@ export class OrdersService {
       await this.orders.update(o.id, { status: 'confirmado' });
       this.notifications.notifyRestaurantNewOrder(o.restaurantId, o.id).catch(() => null);
     }
+    await this.dataSource.query(
+      `UPDATE payments
+       SET status = 'confirmed',
+           bank_provider = COALESCE($2, bank_provider),
+           confirmed_at = COALESCE(confirmed_at, NOW()),
+           metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+           updated_at = NOW()
+       WHERE group_id = $1`,
+      [groupId, bankProvider ?? null, JSON.stringify({ reference, ...(metadata ?? {}) })],
+    );
     return { groupId, status: 'confirmado', total: groupTotal, orderCount: orders.length };
   }
 
@@ -346,20 +459,64 @@ export class OrdersService {
     return { id: orderId, status: 'cancelado' };
   }
 
-  async confirmPayment(orderId: string, paidAmount?: number) {
+  async confirmPayment(orderId: string, paidAmount?: number, reference?: string, bankProvider?: string, metadata?: Record<string, unknown>) {
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (['cancelado', 'entregado'].includes(order.status)) {
       throw new ForbiddenException(`No se puede confirmar pago para orden con estado '${order.status}'`);
     }
-    if (paidAmount !== undefined && paidAmount < Number(order.total)) {
+    const [paymentRow] = await this.dataSource.query(
+      `SELECT total_amount FROM payments WHERE order_id = $1 ORDER BY requested_at DESC LIMIT 1`,
+      [orderId],
+    );
+    const targetTotal = paymentRow ? Number(paymentRow.total_amount) : Number(order.total);
+    if (paidAmount !== undefined && paidAmount < targetTotal) {
       throw new BadRequestException(
-        `Monto insuficiente: se requieren Bs ${order.total}, recibido Bs ${paidAmount}`,
+        `Monto insuficiente: se requieren Bs ${targetTotal}, recibido Bs ${paidAmount}`,
       );
     }
     await this.orders.update(orderId, { status: 'confirmado' });
     this.notifications.notifyRestaurantNewOrder(order.restaurantId, orderId).catch(() => null);
-    return { id: orderId, status: 'confirmado', paidAt: new Date().toISOString(), total: order.total };
+    await this.dataSource.query(
+      `UPDATE payments
+       SET status = 'confirmed',
+           bank_provider = COALESCE($2, bank_provider),
+           confirmed_at = COALESCE(confirmed_at, NOW()),
+           metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+           updated_at = NOW()
+       WHERE order_id = $1`,
+      [orderId, bankProvider ?? null, JSON.stringify({ reference, ...(metadata ?? {}) })],
+    );
+    return { id: orderId, status: 'confirmado', paidAt: new Date().toISOString(), total: targetTotal };
+  }
+
+  async confirmPaymentByReference(
+    reference: string,
+    paidAmount?: number,
+    bankTransactionId?: string,
+    bankProvider?: string,
+    metadata?: Record<string, unknown>,
+  ) {
+    const [payment] = await this.dataSource.query(
+      `SELECT * FROM payments WHERE reference = $1 LIMIT 1`,
+      [reference],
+    );
+    if (!payment) throw new NotFoundException('Pago no encontrado');
+
+    const result = payment.scope_type === 'group'
+      ? await this.confirmGroupPayment(payment.group_id, paidAmount, reference, bankProvider, metadata)
+      : await this.confirmPayment(payment.order_id, paidAmount, reference, bankProvider, metadata);
+
+    await this.dataSource.query(
+      `UPDATE payments
+       SET bank_transaction_id = COALESCE($2, bank_transaction_id),
+           bank_provider = COALESCE($3, bank_provider),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [payment.id, bankTransactionId ?? null, bankProvider ?? null],
+    );
+
+    return { reference, ...result };
   }
 
   async findAllOrders() {
@@ -389,8 +546,11 @@ export class OrdersService {
           restaurantName: o.restaurant_name ?? '',
           clientName: `${o.first_name ?? ''} ${o.last_name ?? ''}`.trim(),
           status: o.status,
+          subtotal: Number(o.subtotal ?? 0),
           total: Number(o.total),
           deliveryFee: Number(o.delivery_fee),
+          platformFee: Number(o.platform_fee ?? 0),
+          paymentReference: o.payment_reference,
           deliveryType: o.delivery_type,
           deliveryAddress: o.delivery_address,
           deliveryLat: o.delivery_lat ? Number(o.delivery_lat) : null,

@@ -78,16 +78,16 @@ export class OrdersController {
   @Put(':id/preparing')
   @UseGuards(CasbinGuard)
   @ApiOperation({ summary: 'Marcar pedido en preparación — admin' })
-  markPreparing(@Param('id') id: string) {
-    return this.groups.markOrderPreparing(id);
+  markPreparing(@Request() req: any, @Param('id') id: string) {
+    return this.groups.markOrderPreparing(id, req.user.id);
   }
 
   // ── Estado: preparando → listo (admin/restaurante) ───────────────────────
   @Put(':id/ready')
   @UseGuards(CasbinGuard)
   @ApiOperation({ summary: 'Marcar pedido listo para recoger — admin' })
-  markReady(@Param('id') id: string) {
-    return this.groups.markOrderReady(id);
+  markReady(@Request() req: any, @Param('id') id: string) {
+    return this.groups.markOrderReady(id, req.user.id);
   }
 
   // ── Estado: listo → en_camino (rider recogió del restaurante) ────────────

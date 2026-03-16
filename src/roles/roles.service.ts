@@ -14,6 +14,12 @@ export const ALL_FRONTEND_ROUTES = [
   '/dashboard/riders',
   '/dashboard/config',
   '/dashboard/roles',
+  '/dashboard/payments',
+  '/dashboard/bank-accounts',
+  '/dashboard/withdrawals',
+  '/dashboard/my-restaurant/income',
+  '/dashboard/my-restaurant/bank-accounts',
+  '/dashboard/my-restaurant/withdrawals',
 ] as const;
 
 @Injectable()

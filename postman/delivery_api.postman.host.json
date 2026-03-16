@@ -161,15 +161,15 @@
           }
         },
         {
-          "name": "(SuperAdmin) Forzar estado genérico — /orders/:id/status",
+          "name": "Confirmar pago (webhook)",
           "request": {
-            "method": "PUT",
+            "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              { "key": "x-payment-secret", "value": "{{webhook_secret}}" }
             ],
-            "url": "{{base_url}}/orders/{{order_id}}/status",
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"confirmado\"\n}" }
+            "url": "{{base_url}}/orders/{{order_id}}/pay",
+            "body": { "mode": "raw", "raw": "{\n  \"paidAmount\": 100\n}" }
           }
         }
       ]
@@ -187,6 +187,18 @@
           }
         },
         {
+          "name": "Confirmar pedido (pendiente → confirmado)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token_mario}}" }
+            ],
+            "url": "{{base_url}}/orders/{{order_id}}/status",
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"confirmado\"\n}" }
+          }
+        },
+        {
           "name": "Marcar preparando (confirmado → preparando)",
           "request": {
             "method": "PUT",
@@ -194,7 +206,8 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{token_mario}}" }
             ],
-            "url": "{{base_url}}/orders/{{order_id}}/preparing"
+            "url": "{{base_url}}/orders/{{order_id}}/status",
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"preparando\"\n}" }
           }
         },
         {
@@ -210,7 +223,7 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{token_mario}}" }
             ],
-            "url": "{{base_url}}/orders/{{order_id}}/ready"
+            "url": "{{base_url}}/rider/orders/{{order_id}}/ready"
           }
         }
       ]
@@ -251,19 +264,11 @@
           }
         },
         {
-          "name": "Marcar en camino (listo → en_camino)",
+          "name": "Marcar pedido entregado",
           "request": {
             "method": "PUT",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "url": "{{base_url}}/orders/{{order_id}}/on-the-way"
-          }
-        },
-        {
-          "name": "Marcar entregado/finalizado (en_camino → entregado)",
-          "request": {
-            "method": "PUT",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "url": "{{base_url}}/orders/{{order_id}}/done"
+            "url": "{{base_url}}/rider/orders/{{order_id}}/delivered"
           }
         }
       ]
@@ -341,6 +346,36 @@
           }
         },
         {
+          "name": "Webhook: Confirmar pago por orderId",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-payment-secret", "value": "{{webhook_secret}}" }
+            ],
+            "url": "{{base_url}}/payments/order/{{order_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paidAmount\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Webhook: Confirmar pago por groupId",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-payment-secret", "value": "{{webhook_secret}}" }
+            ],
+            "url": "{{base_url}}/payments/group/{{group_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paidAmount\": 100\n}"
+            }
+          }
+        },
+        {
           "name": "Admin: Resumen financiero",
           "request": {
             "method": "GET",
@@ -378,35 +413,6 @@
               "raw": "{{base_url}}/payments/admin/withdrawals?limit=100",
               "host": ["{{base_url}}"],
               "path": ["payments", "admin", "withdrawals"],
-              "query": [{ "key": "limit", "value": "100" }]
-            }
-          }
-        },
-        {
-          "name": "Restaurante: Mis ingresos",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token_mario}}" }],
-            "url": "{{base_url}}/payments/admin/my/income"
-          }
-        },
-        {
-          "name": "Restaurante: Mis cuentas bancarias",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token_mario}}" }],
-            "url": "{{base_url}}/payments/admin/my/bank-accounts"
-          }
-        },
-        {
-          "name": "Restaurante: Mis retiros",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token_mario}}" }],
-            "url": {
-              "raw": "{{base_url}}/payments/admin/my/withdrawals?limit=100",
-              "host": ["{{base_url}}"],
-              "path": ["payments", "admin", "my", "withdrawals"],
               "query": [{ "key": "limit", "value": "100" }]
             }
           }
