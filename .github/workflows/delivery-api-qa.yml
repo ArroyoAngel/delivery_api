@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -31,16 +31,14 @@ jobs:
         run: npm run build
 
   deploy_qa:
-    name: Deploy API to Hostinger VPS (QA)
+    name: Deploy API to QA VPS
     needs: verify
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/develop'
     environment: qa
-    env:
-      API_QA_PATH: /opt/yaya-eats/delivery_api
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -49,7 +47,9 @@ jobs:
         run: |
           set -e
           BASE_SHA=""
-          if [ "${{ github.event_name }}" = "push" ] && [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+          if [ "${{ github.event_name }}" = "push" ] \
+            && [ -n "${{ github.event.before }}" ] \
+            && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
             BASE_SHA="${{ github.event.before }}"
           else
             BASE_SHA="$(git rev-parse HEAD~1 2>/dev/null || true)"
@@ -60,84 +60,54 @@ jobs:
             exit 0
           fi
 
-          CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "${{ github.sha }}")"
-          echo "$CHANGED_FILES"
-
-          if echo "$CHANGED_FILES" | grep -Eq '^(migrations/|src/.+\.entity\.ts$|ormconfig.*\.ts$)'; then
+          CHANGED=$(git diff --name-only "$BASE_SHA" "${{ github.sha }}")
+          if echo "$CHANGED" | grep -Eq '^(migrations/|src/.+\.entity\.ts$|ormconfig.*\.ts$)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Setup SSH key
+      - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          grep -q "BEGIN OPENSSH PRIVATE KEY" ~/.ssh/deploy_key || {
-            echo "Decoded SSH key is not an OpenSSH private key. Check VPS_SSH_KEY."
-            exit 1
-          }
-          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null || {
-            echo "SSH private key could not be parsed. Check VPS_SSH_KEY."
-            exit 1
-          }
-          [ -n "${{ secrets.VPS_HOST }}" ] || {
-            echo "VPS_HOST is empty or not defined in the qa environment."
-            exit 1
-          }
-          [ -n "${{ secrets.VPS_PORT }}" ] || {
-            echo "VPS_PORT is empty or not defined in the qa environment."
-            exit 1
-          }
-          ssh-keyscan -T 15 -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts || {
-            echo "ssh-keyscan failed for ${VPS_HOST:-configured host}:${VPS_PORT:-configured port}. Check VPS_HOST, VPS_PORT, firewall, or server availability."
-            exit 1
-          }
+          ssh-keyscan -T 15 -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Sync backend source to VPS
+      - name: Write .env on VPS
         run: |
-          SSH_OPTS="-i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p ${{ secrets.VPS_PORT }}"
+          echo "${{ secrets.API_QA_ENV_FILE_B64 }}" \
+            | base64 -d \
+            | ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "${{ secrets.VPS_PORT }}" \
+                "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+                "cat > ${{ secrets.API_QA_ENV_PATH }}"
+
+      - name: Sync source to VPS
+        run: |
           rsync -az --delete \
-            -e "ssh $SSH_OPTS" \
+            -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p ${{ secrets.VPS_PORT }}" \
             --exclude ".git" \
             --exclude "node_modules" \
             --exclude "dist" \
             --exclude ".env*" \
             ./ \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${API_QA_PATH}/"
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.API_QA_PATH }}/"
 
       - name: Deploy on VPS
         run: |
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" << 'EOF'
-          set -e
-          test -f /opt/yaya-eats/delivery_api/.env || {
-            echo "Missing /opt/yaya-eats/delivery_api/.env on VPS. Create it manually on server."
-            exit 1
-          }
-          test -f /opt/yaya-eats/delivery_api/Dockerfile || {
-            echo "Missing /opt/yaya-eats/delivery_api/Dockerfile on VPS."
-            exit 1
-          }
-          cp /opt/yaya-eats/delivery_api/Dockerfile /opt/yaya-eats/delivery_api/DockerFile
-          cd /opt/yaya-eats
-          docker compose build api
-          docker compose up -d api
-          EOF
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "${{ secrets.VPS_PORT }}" \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "${{ secrets.API_QA_DEPLOY_COMMAND }}"
 
-      - name: Run migrations on VPS (only when DB files changed)
+      - name: Run migrations (only when DB files changed)
         if: steps.db_changes.outputs.changed == 'true'
         run: |
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" << 'EOF'
-          set -e
-          cd /opt/yaya-eats
-          docker compose exec -T api npm run migrations:run
-          EOF
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "${{ secrets.VPS_PORT }}" \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "${{ secrets.API_QA_MIGRATE_COMMAND }}"
 
-      - name: API smoke check
+      - name: Health check
         run: |
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" << 'EOF'
-          set -e
-          echo "Checking http://127.0.0.1:3002/api/health from VPS"
-          curl -fSL --retry 8 --retry-delay 5 --retry-connrefused http://127.0.0.1:3002/api/health > /dev/null
-          EOF
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "${{ secrets.VPS_PORT }}" \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "curl -fSL --retry 10 --retry-delay 6 --retry-all-errors ${{ secrets.API_QA_HEALTH_URL }}"
