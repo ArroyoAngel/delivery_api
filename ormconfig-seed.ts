@@ -1,7 +1,13 @@
 import { DataSource } from 'typeorm';
 import * as dotenv from 'dotenv';
+import * as fs from 'fs';
 
 dotenv.config();
+
+// Use compiled seeds in Docker, source seeds otherwise
+const seedsPath = fs.existsSync('./dist/database/seeds')
+  ? 'dist/database/seeds/*.js'
+  : 'database/seeds/*.ts';
 
 const SeedDataSource = new DataSource({
   type: 'postgres',
@@ -13,7 +19,7 @@ const SeedDataSource = new DataSource({
   synchronize: false,
   logging: true,
   entities: ['src/**/*.entity.ts'],
-  migrations: ['database/seeds/*.ts'],
+  migrations: [seedsPath],
 });
 
 export default SeedDataSource;

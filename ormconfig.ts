@@ -1,7 +1,13 @@
 import { DataSource } from 'typeorm';
 import * as dotenv from 'dotenv';
+import * as fs from 'fs';
 
 dotenv.config();
+
+// Use compiled migrations in Docker, source migrations otherwise
+const migrationsPath = fs.existsSync('./dist/database/migrations')
+  ? 'dist/database/migrations/*.js'
+  : 'database/migrations/*.ts';
 
 const AppDataSource = new DataSource({
   type: 'postgres',
@@ -13,7 +19,7 @@ const AppDataSource = new DataSource({
   synchronize: false,
   logging: true,
   entities: ['src/**/*.entity.ts'],
-  migrations: ['database/migrations/*.ts'],
+  migrations: [migrationsPath],
 });
 
 export default AppDataSource;

@@ -9,7 +9,9 @@ RUN npx tsc -p tsconfig.migrations.json
 FROM node:20-alpine AS runner
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --omit=dev --legacy-peer-deps
+RUN npm ci --legacy-peer-deps
 COPY --from=builder /app/dist ./dist
+COPY database ./database
+COPY ormconfig.ts ormconfig-seed.ts tsconfig.typeorm.json ./
 EXPOSE 3002
-CMD ["node", "dist/src/main.js"]
+CMD ["sh", "-c", "npm run setup && node dist/src/main.js"]
