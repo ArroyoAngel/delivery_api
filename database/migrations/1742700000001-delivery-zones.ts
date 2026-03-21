@@ -27,18 +27,18 @@ export class DeliveryZones1742700000001 implements MigrationInterface {
         ('${ZONE_MONTERO}', 'Montero',           'Montero',   -17.3407, -63.2538,  8000)
     `);
 
-    // ── 3. FK en shops ────────────────────────────────────────────────────
+    // ── 3. FK en restaurants (se renombra a shops en migración posterior) ───
     await queryRunner.query(`
-      ALTER TABLE shops
+      ALTER TABLE restaurants
         ADD COLUMN IF NOT EXISTS zone_id UUID,
         ADD CONSTRAINT fk_shop_zone
           FOREIGN KEY (zone_id) REFERENCES delivery_zones(id) ON DELETE SET NULL
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_shops_zone ON shops(zone_id)`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_shops_zone ON restaurants(zone_id)`);
 
     // Auto-asignar negocios existentes por coordenadas (radio 20 km de Santa Cruz)
     await queryRunner.query(`
-      UPDATE shops SET zone_id = '${ZONE_SC}'
+      UPDATE restaurants SET zone_id = '${ZONE_SC}'
       WHERE latitude IS NOT NULL AND longitude IS NOT NULL
         AND zone_id IS NULL
         AND (
