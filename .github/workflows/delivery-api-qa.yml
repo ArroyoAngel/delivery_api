@@ -110,4 +110,4 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "${{ secrets.VPS_PORT }}" \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "curl -fSL --retry 10 --retry-delay 6 --retry-all-errors ${{ secrets.API_QA_HEALTH_URL }}"
+            "curl -fSL --retry 10 --retry-delay 6 --retry-connrefused ${{ secrets.API_QA_HEALTH_URL }}"
