@@ -27,27 +27,44 @@ export class DeliveryZones1742700000001 implements MigrationInterface {
         ('${ZONE_MONTERO}', 'Montero',           'Montero',   -17.3407, -63.2538,  8000)
     `);
 
-    // ── 3. FK en restaurants (se renombra a shops en migración posterior) ───
+    // ── 3. FK en shops ────────────────────────────────────────────────────
     await queryRunner.query(`
-      ALTER TABLE restaurants
-        ADD COLUMN IF NOT EXISTS zone_id UUID,
-        ADD CONSTRAINT fk_shop_zone
-          FOREIGN KEY (zone_id) REFERENCES delivery_zones(id) ON DELETE SET NULL
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'restaurants') THEN
+          ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS zone_id UUID;
+          ALTER TABLE restaurants ADD CONSTRAINT fk_shop_zone FOREIGN KEY (zone_id) REFERENCES delivery_zones(id) ON DELETE SET NULL;
+          CREATE INDEX IF NOT EXISTS idx_shops_zone ON restaurants(zone_id);
+        ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'shops') THEN
+          ALTER TABLE shops ADD COLUMN IF NOT EXISTS zone_id UUID;
+          ALTER TABLE shops ADD CONSTRAINT fk_shop_zone FOREIGN KEY (zone_id) REFERENCES delivery_zones(id) ON DELETE SET NULL;
+          CREATE INDEX IF NOT EXISTS idx_shops_zone ON shops(zone_id);
+        END IF;
+      END $$
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_shops_zone ON restaurants(zone_id)`);
 
     // Auto-asignar negocios existentes por coordenadas (radio 20 km de Santa Cruz)
     await queryRunner.query(`
-      UPDATE restaurants SET zone_id = '${ZONE_SC}'
-      WHERE latitude IS NOT NULL AND longitude IS NOT NULL
-        AND zone_id IS NULL
-        AND (
-          6371000 * acos(LEAST(1.0,
-            cos(radians(-17.7832)) * cos(radians(latitude::float)) *
-            cos(longitude::float * pi()/180 - radians(-63.1975)) +
-            sin(radians(-17.7832)) * sin(radians(latitude::float))
-          ))
-        ) <= 20000
+      UPDATE shops SET zone_id = '${ZONE_SC}'
+      WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'shops')
+        AND latitude IS NOT NULL AND longitude IS NOT NULL AND zone_id IS NULL
+        AND (6371000 * acos(LEAST(1.0,
+          cos(radians(-17.7832)) * cos(radians(latitude::float)) *
+          cos(longitude::float * pi()/180 - radians(-63.1975)) +
+          sin(radians(-17.7832)) * sin(radians(latitude::float))
+        ))) <= 20000
+    `);
+    await queryRunner.query(`
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'restaurants') THEN
+          UPDATE restaurants SET zone_id = '${ZONE_SC}'
+          WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND zone_id IS NULL
+            AND (6371000 * acos(LEAST(1.0,
+              cos(radians(-17.7832)) * cos(radians(latitude::float)) *
+              cos(longitude::float * pi()/180 - radians(-63.1975)) +
+              sin(radians(-17.7832)) * sin(radians(latitude::float))
+            ))) <= 20000;
+        END IF;
+      END $$
     `);
 
     // ── 4. FK en riders (zona base) ───────────────────────────────────────
