@@ -7,16 +7,24 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { AccountEntity } from './account.entity';
+import * as admin from 'firebase-admin';
+import { Resend } from 'resend';
 
 @Injectable()
 export class AuthService {
+  private resend: Resend;
+
   constructor(
     @InjectRepository(AccountEntity)
     private accounts: Repository<AccountEntity>,
     private jwt: JwtService,
     private dataSource: DataSource,
-  ) {}
+    private config: ConfigService,
+  ) {
+    this.resend = new Resend(this.config.get('RESEND_API_KEY', ''));
+  }
 
   private token(account: AccountEntity) {
     return {
@@ -26,6 +34,99 @@ export class AuthService {
         roles: account.roles,
       }),
     };
+  }
+
+  // ── Email OTP ────────────────────────────────────────────────────────────
+
+  /** Genera y envía un OTP de 6 dígitos al email dado. */
+  async sendEmailOtp(email: string): Promise<void> {
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutos
+
+    // Invalida OTPs anteriores para este email
+    await this.dataSource.query(
+      `UPDATE email_otps SET used = true WHERE email = $1 AND used = false`,
+      [email],
+    );
+
+    await this.dataSource.query(
+      `INSERT INTO email_otps (email, code, expires_at) VALUES ($1, $2, $3)`,
+      [email, code, expiresAt],
+    );
+
+    const fromEmail = this.config.get('RESEND_FROM_EMAIL', 'onboarding@resend.dev');
+    const { data, error } = await this.resend.emails.send({
+      from: fromEmail,
+      to: email,
+      subject: 'Tu código de verificación — YaYa Eats',
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px">
+          <h2 style="color:#f97316;margin-bottom:8px">YaYa Eats</h2>
+          <p style="color:#444;margin-bottom:24px">Tu código de verificación es:</p>
+          <div style="background:#fff7ed;border:2px solid #f97316;border-radius:12px;padding:24px;text-align:center">
+            <span style="font-size:40px;font-weight:700;letter-spacing:12px;color:#f97316">${code}</span>
+          </div>
+          <p style="color:#666;font-size:13px;margin-top:20px">
+            Válido por <strong>10 minutos</strong>. No compartas este código con nadie.
+          </p>
+        </div>
+      `,
+    });
+
+    if (error) {
+      // Revertir el OTP guardado si el email no pudo enviarse
+      await this.dataSource.query(
+        `UPDATE email_otps SET used = true WHERE email = $1 AND used = false`,
+        [email],
+      );
+      throw new BadRequestException(`No se pudo enviar el email: ${error.message}`);
+    }
+
+    console.log(`[Auth] OTP enviado a ${email} — id: ${data?.id}`);
+  }
+
+  /** Verifica el OTP y completa el registro. Retorna JWT si el código es correcto. */
+  async verifyEmailOtpAndRegister(params: {
+    email: string;
+    code: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+  }): Promise<{ accessToken: string }> {
+    const row = await this.dataSource.query(
+      `SELECT * FROM email_otps
+       WHERE email = $1 AND code = $2 AND used = false AND expires_at > now()
+       ORDER BY created_at DESC LIMIT 1`,
+      [params.email, params.code],
+    );
+
+    if (!row.length) {
+      throw new BadRequestException('Código incorrecto o expirado');
+    }
+
+    // Marcar como usado
+    await this.dataSource.query(
+      `UPDATE email_otps SET used = true WHERE id = $1`,
+      [row[0].id],
+    );
+
+    // Crear cuenta
+    const exists = await this.accounts.findOne({ where: { email: params.email } });
+    if (exists) throw new ConflictException('Email ya registrado');
+
+    const account = await this.accounts.save(
+      this.accounts.create({ email: params.email, password: params.password }),
+    );
+
+    // Crear perfil con nombre
+    await this.dataSource.query(
+      `INSERT INTO profiles (id, account_id, first_name, last_name)
+       VALUES (gen_random_uuid(), $1, $2, $3)
+       ON CONFLICT (account_id) DO UPDATE SET first_name = $2, last_name = $3`,
+      [account.id, params.firstName, params.lastName],
+    );
+
+    return this.token(account);
   }
 
   async login(email: string, password: string) {
@@ -54,6 +155,102 @@ export class AuthService {
       this.accounts.create({ email, password }),
     );
     return this.token(account);
+  }
+
+  /** Verifica un Firebase ID token (phone auth, email link, etc.) y retorna JWT de la plataforma.
+   *  - Phone auth: crea cuenta con phone_id; email placeholder generado internamente.
+   *  - Email auth: busca/crea por email.
+   */
+  async firebaseLogin(idToken: string) {
+    let decoded: admin.auth.DecodedIdToken;
+    try {
+      // Usa el app ya inicializado por NotificationsService (singleton de firebase-admin)
+      decoded = await admin.auth().verifyIdToken(idToken);
+    } catch {
+      throw new BadRequestException('Firebase token inválido');
+    }
+
+    const { uid, phone_number: phone, email } = decoded as any;
+
+    // ── Phone-based sign-in ──────────────────────────────────────────────
+    if (phone) {
+      let account = await this.accounts.findOne({ where: { phoneId: uid } });
+      if (!account) {
+        // Crear cuenta con email placeholder — no se usa para autenticación
+        const placeholder = `phone:${uid}@yayaeats.local`;
+        account = await this.accounts.save(
+          this.accounts.create({ email: placeholder, phoneId: uid }),
+        );
+        // Guardar el número de teléfono en el perfil
+        await this.dataSource.query(
+          `INSERT INTO profiles (id, account_id, phone)
+           VALUES (gen_random_uuid(), $1, $2)
+           ON CONFLICT (account_id) DO UPDATE SET phone = EXCLUDED.phone`,
+          [account.id, phone],
+        );
+      }
+      return this.token(account);
+    }
+
+    // ── Email-based Firebase sign-in ─────────────────────────────────────
+    if (email) {
+      let account = await this.accounts.findOne({ where: { email } });
+      if (!account) {
+        account = await this.accounts.save(
+          this.accounts.create({ email, googleId: uid }),
+        );
+      }
+      return this.token(account);
+    }
+
+    throw new BadRequestException('El token Firebase no contiene email ni teléfono');
+  }
+
+  /** Verifica un Firebase phone token y actualiza el teléfono del perfil del usuario autenticado. */
+  async updatePhone(accountId: string, idToken: string): Promise<{ phone: string }> {
+    let decoded: admin.auth.DecodedIdToken;
+    try {
+      decoded = await admin.auth().verifyIdToken(idToken);
+    } catch {
+      throw new BadRequestException('Firebase token inválido');
+    }
+
+    const phone = (decoded as any).phone_number;
+    if (!phone) throw new BadRequestException('El token no corresponde a autenticación por teléfono');
+
+    await this.dataSource.query(
+      `INSERT INTO profiles (id, account_id, phone)
+       VALUES (gen_random_uuid(), $1, $2)
+       ON CONFLICT (account_id) DO UPDATE SET phone = EXCLUDED.phone`,
+      [accountId, phone],
+    );
+
+    // También guardar el phone_id en accounts para login futuro por teléfono
+    const uid = decoded.uid;
+    await this.accounts.update(accountId, { phoneId: uid });
+
+    return { phone };
+  }
+
+  async updateProfile(accountId: string, body: { firstName?: string; lastName?: string }) {
+    // Ensure the profile row exists
+    await this.dataSource.query(
+      `INSERT INTO profiles (id, account_id) VALUES (gen_random_uuid(), $1) ON CONFLICT (account_id) DO NOTHING`,
+      [accountId],
+    );
+    if (body.firstName !== undefined) {
+      await this.dataSource.query(
+        `UPDATE profiles SET first_name = $1 WHERE account_id = $2`,
+        [body.firstName, accountId],
+      );
+    }
+    if (body.lastName !== undefined) {
+      await this.dataSource.query(
+        `UPDATE profiles SET last_name = $1 WHERE account_id = $2`,
+        [body.lastName, accountId],
+      );
+    }
+    return {};
   }
 
   async googleLogin(idToken: string) {
@@ -131,20 +328,20 @@ export class AuthService {
       routes.add('/dashboard/orders');
     }
     if (
-      perms.includes('manage_restaurant') ||
+      perms.includes('manage_shop') ||
       perms.includes('manage_menu') ||
       perms.includes('manage_schedule')
     ) {
-      routes.add('/dashboard/my-restaurant');
+      routes.add('/dashboard/my-shop');
     }
     if (
-      perms.includes('manage_restaurant') ||
+      perms.includes('manage_shop') ||
       perms.includes('manage_orders') ||
       perms.includes('view_orders')
     ) {
-      routes.add('/dashboard/my-restaurant/income');
-      routes.add('/dashboard/my-restaurant/bank-accounts');
-      routes.add('/dashboard/my-restaurant/withdrawals');
+      routes.add('/dashboard/my-shop/income');
+      routes.add('/dashboard/my-shop/bank-accounts');
+      routes.add('/dashboard/my-shop/withdrawals');
     }
     if (perms.includes('manage_staff')) {
       routes.add('/dashboard/staff');

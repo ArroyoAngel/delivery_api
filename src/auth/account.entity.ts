@@ -13,6 +13,7 @@ export class AccountEntity {
   @Column({ unique: true }) email: string;
   @Column({ nullable: true }) password: string;
   @Column({ name: 'google_id', nullable: true }) googleId: string;
+  @Column({ name: 'phone_id', nullable: true, unique: true }) phoneId: string;
   @Column('text', { array: true, default: '{client}' }) roles: string[];
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
 

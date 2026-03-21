@@ -1,16 +1,16 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CasbinRestaurantServices1742500000018 implements MigrationInterface {
-  name = 'CasbinRestaurantServices1742500000018';
+export class CasbinShopServices1742500000018 implements MigrationInterface {
+  name = 'CasbinShopServices1742500000018';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     const backendRules: Array<[string, string, string]> = [
-      ['admin', '/api/orders/restaurant/local/areas', 'GET'],
-      ['admin', '/api/orders/restaurant/local/areas', 'POST'],
-      ['admin', '/api/orders/restaurant/local/cash', 'POST'],
-      ['superadmin', '/api/orders/restaurant/local/areas', 'GET'],
-      ['superadmin', '/api/orders/restaurant/local/areas', 'POST'],
-      ['superadmin', '/api/orders/restaurant/local/cash', 'POST'],
+      ['admin', '/api/orders/shop/local/areas', 'GET'],
+      ['admin', '/api/orders/shop/local/areas', 'POST'],
+      ['admin', '/api/orders/shop/local/cash', 'POST'],
+      ['superadmin', '/api/orders/shop/local/areas', 'GET'],
+      ['superadmin', '/api/orders/shop/local/areas', 'POST'],
+      ['superadmin', '/api/orders/shop/local/cash', 'POST'],
     ];
 
     for (const [role, route, method] of backendRules) {
@@ -23,8 +23,8 @@ export class CasbinRestaurantServices1742500000018 implements MigrationInterface
     }
 
     const frontendRoutes: Array<[string, string]> = [
-      ['admin', '/dashboard/my-restaurant/services'],
-      ['superadmin', '/dashboard/my-restaurant/services'],
+      ['admin', '/dashboard/my-shop/services'],
+      ['superadmin', '/dashboard/my-shop/services'],
     ];
 
     for (const [role, route] of frontendRoutes) {
@@ -43,8 +43,8 @@ export class CasbinRestaurantServices1742500000018 implements MigrationInterface
        WHERE ptype = 'p'
          AND v4 = 'backend'
          AND v1 IN (
-           '/api/orders/restaurant/local/areas',
-           '/api/orders/restaurant/local/cash'
+           '/api/orders/shop/local/areas',
+           '/api/orders/shop/local/cash'
          )`,
     );
 
@@ -52,7 +52,7 @@ export class CasbinRestaurantServices1742500000018 implements MigrationInterface
       `DELETE FROM casbin_rule
        WHERE ptype = 'p'
          AND v4 = 'frontend'
-         AND v1 = '/dashboard/my-restaurant/services'`,
+         AND v1 = '/dashboard/my-shop/services'`,
     );
   }
 }

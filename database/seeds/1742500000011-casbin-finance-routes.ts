@@ -10,9 +10,11 @@ export class CasbinFinanceRoutes1742500000011 implements MigrationInterface {
       [SA, '/api/payments/admin/list', 'GET'],
       [SA, '/api/payments/admin/bank-accounts', 'GET'],
       [SA, '/api/payments/admin/withdrawals', 'GET'],
+      [SA, '/api/payments/admin/withdrawals/:id/process', 'PUT'],
       [AD, '/api/payments/my/income', 'GET'],
       [AD, '/api/payments/my/bank-accounts', 'GET'],
       [AD, '/api/payments/my/withdrawals', 'GET'],
+      [AD, '/api/payments/my/withdrawal', 'POST'],
     ];
 
     for (const [role, route, method] of backend) {
@@ -28,9 +30,9 @@ export class CasbinFinanceRoutes1742500000011 implements MigrationInterface {
       [SA, '/dashboard/payments'],
       [SA, '/dashboard/bank-accounts'],
       [SA, '/dashboard/withdrawals'],
-      [AD, '/dashboard/my-restaurant/income'],
-      [AD, '/dashboard/my-restaurant/bank-accounts'],
-      [AD, '/dashboard/my-restaurant/withdrawals'],
+      [AD, '/dashboard/my-shop/income'],
+      [AD, '/dashboard/my-shop/bank-accounts'],
+      [AD, '/dashboard/my-shop/withdrawals'],
     ];
 
     for (const [role, route] of frontend) {
@@ -69,9 +71,9 @@ export class CasbinFinanceRoutes1742500000011 implements MigrationInterface {
       '/dashboard/payments',
       '/dashboard/bank-accounts',
       '/dashboard/withdrawals',
-      '/dashboard/my-restaurant/income',
-      '/dashboard/my-restaurant/bank-accounts',
-      '/dashboard/my-restaurant/withdrawals',
+      '/dashboard/my-shop/income',
+      '/dashboard/my-shop/bank-accounts',
+      '/dashboard/my-shop/withdrawals',
     ];
 
     for (const route of frontendRoutes) {

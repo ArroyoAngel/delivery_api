@@ -10,7 +10,7 @@ export class MarketplaceFinance1742500000008 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
-      INSERT INTO restaurant_bank_accounts (restaurant_id, bank_name, account_holder, account_number, account_type, branch_name, is_default)
+      INSERT INTO shop_bank_accounts (shop_id, bank_name, account_holder, account_number, account_type, branch_name, is_default)
       VALUES
         ('b1000000-0000-0000-0000-000000000001', 'BNB', 'El Fogón Cruceño SRL', '201000000001', 'corriente', 'Equipetrol', true),
         ('b1000000-0000-0000-0000-000000000002', 'BNB', 'La Casona SRL', '201000000002', 'corriente', 'Monseñor Rivero', true),
@@ -58,8 +58,8 @@ export class MarketplaceFinance1742500000008 implements MigrationInterface {
     await queryRunner.query(`
       INSERT INTO wallet_transactions (owner_type, owner_id, payment_id, order_id, entry_type, amount, status, description)
       SELECT
-        'restaurant',
-        o.restaurant_id,
+        'shop',
+        o.shop_id,
         p.id,
         o.id,
         'credit',
@@ -100,19 +100,19 @@ export class MarketplaceFinance1742500000008 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
-      INSERT INTO withdrawal_requests (owner_type, restaurant_id, amount, status, restaurant_bank_account_id, notes)
-      SELECT 'restaurant', r.id, 45.00, 'pending', rba.id, 'Retiro pendiente de ejemplo'
-      FROM restaurants r
-      JOIN restaurant_bank_accounts rba ON rba.restaurant_id = r.id AND rba.is_default = true
+      INSERT INTO withdrawal_requests (owner_type, shop_id, amount, status, shop_bank_account_id, notes)
+      SELECT 'shop', r.id, 45.00, 'pending', rba.id, 'Retiro pendiente de ejemplo'
+      FROM shops r
+      JOIN shop_bank_accounts rba ON rba.shop_id = r.id AND rba.is_default = true
       WHERE r.id = 'b1000000-0000-0000-0000-000000000001'
       ON CONFLICT DO NOTHING
     `);
 
     await queryRunner.query(`
-      INSERT INTO ratings (order_id, rater_account_id, target_type, target_restaurant_id, score, comment)
+      INSERT INTO ratings (order_id, rater_account_id, target_type, target_shop_id, score, comment)
       VALUES
-        ('d1000000-0000-0000-0000-000000000001', (SELECT id FROM accounts WHERE email = 'ana.garcia@gmail.com'), 'restaurant', 'b1000000-0000-0000-0000-000000000001', 5, 'Muy buena parrilla'),
-        ('d1000000-0000-0000-0000-000000000003', (SELECT id FROM accounts WHERE email = 'sofia.vargas@gmail.com'), 'restaurant', 'b1000000-0000-0000-0000-000000000003', 4, 'Sushi fresco y rápido')
+        ('d1000000-0000-0000-0000-000000000001', (SELECT id FROM accounts WHERE email = 'ana.garcia@gmail.com'), 'shop', 'b1000000-0000-0000-0000-000000000001', 5, 'Muy buena parrilla'),
+        ('d1000000-0000-0000-0000-000000000003', (SELECT id FROM accounts WHERE email = 'sofia.vargas@gmail.com'), 'shop', 'b1000000-0000-0000-0000-000000000003', 4, 'Sushi fresco y rápido')
       ON CONFLICT DO NOTHING
     `);
 
@@ -132,7 +132,7 @@ export class MarketplaceFinance1742500000008 implements MigrationInterface {
     await queryRunner.query(`DELETE FROM wallet_transactions WHERE description LIKE '%seed%';`);
     await queryRunner.query(`DELETE FROM payments WHERE reference LIKE 'ORD_D1000000%';`);
     await queryRunner.query(`DELETE FROM rider_bank_accounts;`);
-    await queryRunner.query(`DELETE FROM restaurant_bank_accounts;`);
+    await queryRunner.query(`DELETE FROM shop_bank_accounts;`);
     await queryRunner.query(`DELETE FROM system_config WHERE key IN ('platform_service_fee', 'minimum_withdrawal_amount');`);
   }
 }

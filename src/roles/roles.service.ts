@@ -7,9 +7,9 @@ export type SystemRole = (typeof SYSTEM_ROLES)[number];
 export const ALL_FRONTEND_ROUTES = [
   '/dashboard',
   '/dashboard/orders',
-  '/dashboard/my-restaurant',
+  '/dashboard/my-shop',
   '/dashboard/staff',
-  '/dashboard/restaurants',
+  '/dashboard/shops',
   '/dashboard/users',
   '/dashboard/riders',
   '/dashboard/config',
@@ -17,9 +17,9 @@ export const ALL_FRONTEND_ROUTES = [
   '/dashboard/payments',
   '/dashboard/bank-accounts',
   '/dashboard/withdrawals',
-  '/dashboard/my-restaurant/income',
-  '/dashboard/my-restaurant/bank-accounts',
-  '/dashboard/my-restaurant/withdrawals',
+  '/dashboard/my-shop/income',
+  '/dashboard/my-shop/bank-accounts',
+  '/dashboard/my-shop/withdrawals',
 ] as const;
 
 @Injectable()

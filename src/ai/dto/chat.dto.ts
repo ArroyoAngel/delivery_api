@@ -9,8 +9,8 @@ import {
 } from 'class-validator';
 
 export class ChatMessageDto {
-  @IsIn(['user', 'assistant'])
-  role: 'user' | 'assistant';
+  @IsIn(['user', 'assistant', 'system'])
+  role: 'user' | 'assistant' | 'system';
 
   @IsString()
   @MaxLength(5000)
@@ -27,4 +27,8 @@ export class ChatRequestDto {
   @IsString()
   @MaxLength(100)
   chatId?: string;
+
+  @IsOptional()
+  @IsIn(['app', 'telegram'])
+  channel?: 'app' | 'telegram';
 }

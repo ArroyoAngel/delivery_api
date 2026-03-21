@@ -5,22 +5,22 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { RestaurantEntity } from './restaurant.entity';
+import { ShopEntity } from './shop.entity';
 
 /**
- * Horario de atención semanal de un restaurante.
+ * Horario de atención semanal de un negocio.
  * day_of_week: 0 = Domingo … 6 = Sábado (convención ISO-like usada en JS).
- * Si is_closed = true el restaurante no atiende ese día (open_time/close_time ignorados).
+ * Si is_closed = true el negocio no atiende ese día (open_time/close_time ignorados).
  */
-@Entity('restaurant_schedules')
-export class RestaurantScheduleEntity {
+@Entity('shop_schedules')
+export class ShopScheduleEntity {
   @PrimaryGeneratedColumn('uuid') id: string;
 
-  @Column({ name: 'restaurant_id' }) restaurantId: string;
+  @Column({ name: 'shop_id' }) shopId: string;
 
-  @ManyToOne(() => RestaurantEntity, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'restaurant_id' })
-  restaurant: RestaurantEntity;
+  @ManyToOne(() => ShopEntity, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'shop_id' })
+  shop: ShopEntity;
 
   /** 0 = Domingo, 1 = Lunes … 6 = Sábado */
   @Column({ name: 'day_of_week', type: 'smallint' }) dayOfWeek: number;

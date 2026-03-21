@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Body,
   UseGuards,
   Request,
@@ -21,29 +22,56 @@ export class AuthController {
     return this.auth.login(body.email, body.password);
   }
 
+  @Post('register/send-otp')
+  @ApiOperation({ summary: 'Paso 1 registro: enviar OTP al email' })
+  sendRegisterOtp(@Body() body: { email: string }) {
+    return this.auth.sendEmailOtp(body.email).then(() => ({ sent: true }));
+  }
+
   @Post('register')
-  @ApiOperation({ summary: 'Registrarse' })
+  @ApiOperation({ summary: 'Paso 2 registro: verificar OTP y crear cuenta' })
   register(
     @Body()
     body: {
       email: string;
+      code: string;
       password: string;
       firstName: string;
       lastName: string;
     },
   ) {
-    return this.auth.register(
-      body.email,
-      body.password,
-      body.firstName,
-      body.lastName,
-    );
+    return this.auth.verifyEmailOtpAndRegister(body);
   }
 
   @Post('google')
   @ApiOperation({ summary: 'Login con Google (idToken)' })
   googleLogin(@Body() body: { idToken: string }) {
     return this.auth.googleLogin(body.idToken);
+  }
+
+  @Post('firebase')
+  @ApiOperation({ summary: 'Login con Firebase (phone, email link, etc.)' })
+  firebaseLogin(@Body() body: { idToken: string }) {
+    return this.auth.firebaseLogin(body.idToken);
+  }
+
+  @Patch('phone')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verificar y guardar número de teléfono (Firebase OTP)' })
+  updatePhone(@Request() req, @Body() body: { idToken: string }) {
+    return this.auth.updatePhone(req.user.id, body.idToken);
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Actualizar nombre y apellido del perfil' })
+  updateProfile(
+    @Request() req,
+    @Body() body: { firstName?: string; lastName?: string },
+  ) {
+    return this.auth.updateProfile(req.user.id, body);
   }
 
   @Get('me')

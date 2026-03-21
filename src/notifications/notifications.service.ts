@@ -136,11 +136,11 @@ export class NotificationsService implements OnModuleInit {
 
   // ── Business-event helpers ─────────────────────────────────────────────
 
-  /** Notifica al dueño del restaurante sobre un nuevo pedido confirmado */
-  async notifyRestaurantNewOrder(restaurantId: string, orderId: string) {
+  /** Notifica al dueño del negocio sobre un nuevo pedido confirmado */
+  async notifyShopNewOrder(shopId: string, orderId: string) {
     const rows: { owner_account_id: string }[] = await this.dataSource.query(
-      `SELECT owner_account_id FROM restaurants WHERE id = $1`,
-      [restaurantId],
+      `SELECT owner_account_id FROM shops WHERE id = $1`,
+      [shopId],
     );
     const ownerIds = rows.map((r) => r.owner_account_id).filter(Boolean);
     const notification = {
@@ -158,12 +158,12 @@ export class NotificationsService implements OnModuleInit {
   async notifyClientOrderStatus(
     clientId: string,
     status: string,
-    restaurantName = '',
+    shopName = '',
   ) {
     const messages: Record<string, { title: string; body: string }> = {
       preparando: {
         title: '🍳 Preparando tu pedido',
-        body: `${restaurantName || 'El restaurante'} está preparando tu pedido.`,
+        body: `${shopName || 'El negocio'} está preparando tu pedido.`,
       },
       listo: {
         title: '✅ ¡Pedido listo!',

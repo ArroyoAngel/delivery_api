@@ -23,5 +23,6 @@ export class RiderEntity {
   @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
   lng: number;
 
+  @Column({ name: 'zone_id', type: 'uuid', nullable: true }) zoneId: string | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Put, Request, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
 import { CasbinGuard } from '../authorization/guards/casbin.guard';
@@ -16,5 +16,14 @@ export class UsersController {
   @Put(':id/roles')
   updateRoles(@Param('id') id: string, @Body('roles') roles: string[]) {
     return this.users.updateRoles(id, roles);
+  }
+
+  /** Actualiza el perfil propio (teléfono, nombre). Disponible para todos los roles. */
+  @Patch('profile')
+  updateMyProfile(
+    @Request() req: any,
+    @Body() body: { phone?: string; firstName?: string; lastName?: string },
+  ) {
+    return this.users.updateMyProfile(req.user.id, body);
   }
 }

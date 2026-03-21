@@ -18,8 +18,8 @@ export class RatingEntity {
   @Column({ name: 'target_type' }) targetType: string;
   @Column({ name: 'target_account_id', type: 'uuid', nullable: true })
   targetAccountId: string | null;
-  @Column({ name: 'target_restaurant_id', type: 'uuid', nullable: true })
-  targetRestaurantId: string | null;
+  @Column({ name: 'target_shop_id', type: 'uuid', nullable: true })
+  targetShopId: string | null;
   @Column({ type: 'int' }) score: number;
   @Column({ type: 'text', nullable: true }) comment: string | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;

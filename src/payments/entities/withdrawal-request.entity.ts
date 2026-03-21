@@ -10,15 +10,15 @@ import {
 export class WithdrawalRequestEntity {
   @PrimaryGeneratedColumn('uuid') id: string;
   @Column({ name: 'owner_type' }) ownerType: string;
-  @Column({ name: 'restaurant_id', type: 'uuid', nullable: true })
-  restaurantId: string | null;
+  @Column({ name: 'shop_id', type: 'uuid', nullable: true })
+  shopId: string | null;
   @Column({ name: 'rider_id', type: 'uuid', nullable: true }) riderId:
     | string
     | null;
   @Column({ type: 'decimal', precision: 10, scale: 2 }) amount: number;
   @Column({ default: 'pending' }) status: string;
-  @Column({ name: 'restaurant_bank_account_id', type: 'uuid', nullable: true })
-  restaurantBankAccountId: string | null;
+  @Column({ name: 'shop_bank_account_id', type: 'uuid', nullable: true })
+  shopBankAccountId: string | null;
   @Column({ name: 'rider_bank_account_id', type: 'uuid', nullable: true })
   riderBankAccountId: string | null;
   @Column({ name: 'external_transfer_id', type: 'varchar', nullable: true })

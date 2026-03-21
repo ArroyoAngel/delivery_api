@@ -8,8 +8,8 @@ import { DataSource } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import {
   ALL_STAFF_PERMISSIONS,
-  RestaurantStaffPermission,
-} from './restaurant-staff-permission.enum';
+  ShopStaffPermission,
+} from './shop-staff-permission.enum';
 
 /** Nombres de cargo que están reservados para roles del sistema */
 const RESERVED_ROLE_NAMES = [
@@ -36,34 +36,34 @@ interface CreateStaffDto {
 }
 
 @Injectable()
-export class RestaurantStaffService {
+export class ShopStaffService {
   constructor(private readonly dataSource: DataSource) {}
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
   /**
-   * Obtiene el registro admin del requester para este restaurante.
-   * Funciona tanto para el dueño (restaurants.owner_account_id) como para staff asignado.
+   * Obtiene el registro admin del requester para este negocio.
+   * Funciona tanto para el dueño (shops.owner_account_id) como para staff asignado.
    * Lanza ForbiddenException si no tiene acceso.
    */
-  private async getRequesterAdmin(restaurantId: string, accountId: string) {
+  private async getRequesterAdmin(shopId: string, accountId: string) {
     const [row] = await this.dataSource.query(
       `SELECT a.id, a.parent_admin_id, a.granted_permissions
        FROM admins a
        JOIN profiles p ON p.id = a.profile_id
        WHERE p.account_id = $1
          AND (
-           -- dueño del restaurante (su admin no tiene restaurant_id pero el restaurante lo referencia)
+           -- dueño del negocio (su admin no tiene shop_id pero el negocio lo referencia)
            EXISTS (
-             SELECT 1 FROM restaurants r WHERE r.id = $2 AND r.owner_account_id = $1
+             SELECT 1 FROM shops r WHERE r.id = $2 AND r.owner_account_id = $1
            )
            -- staff asignado directamente
-           OR a.restaurant_id = $2
+           OR a.shop_id = $2
          )`,
-      [accountId, restaurantId],
+      [accountId, shopId],
     );
     if (!row)
-      throw new ForbiddenException('No tenés acceso a este restaurante');
+      throw new ForbiddenException('No tenés acceso a este negocio');
     return row as {
       id: string;
       parent_admin_id: string | null;
@@ -94,7 +94,7 @@ export class RestaurantStaffService {
     granted_permissions: string[];
   }) {
     const grantable = this.grantablePermissions(admin);
-    if (!grantable.includes(RestaurantStaffPermission.MANAGE_STAFF)) {
+    if (!grantable.includes(ShopStaffPermission.MANAGE_STAFF)) {
       throw new ForbiddenException('No tenés permiso para gestionar personal');
     }
   }
@@ -111,12 +111,12 @@ export class RestaurantStaffService {
   // ── endpoints ─────────────────────────────────────────────────────────────
 
   async listStaff(
-    restaurantId: string,
+    shopId: string,
     requesterAccountId: string,
     isSuperAdmin = false,
   ) {
     if (!isSuperAdmin) {
-      await this.getRequesterAdmin(restaurantId, requesterAccountId);
+      await this.getRequesterAdmin(shopId, requesterAccountId);
     }
 
     if (isSuperAdmin) {
@@ -135,15 +135,15 @@ export class RestaurantStaffService {
          FROM admins a
          JOIN profiles p   ON p.id   = a.profile_id
          JOIN accounts acc ON acc.id = p.account_id
-         WHERE a.restaurant_id = $1
+         WHERE a.shop_id = $1
             OR (
-                 a.restaurant_id IS NULL
+                 a.shop_id IS NULL
                  AND p.account_id IN (
-                   SELECT owner_account_id FROM restaurants WHERE id = $1
+                   SELECT owner_account_id FROM shops WHERE id = $1
                  )
                )
          ORDER BY (a.parent_admin_id IS NULL) DESC, a.created_at ASC`,
-        [restaurantId],
+        [shopId],
       );
     }
 
@@ -161,14 +161,14 @@ export class RestaurantStaffService {
        FROM admins a
        JOIN profiles p  ON p.id  = a.profile_id
        JOIN accounts acc ON acc.id = p.account_id
-       WHERE a.restaurant_id = $1
+       WHERE a.shop_id = $1
        ORDER BY a.created_at ASC`,
-      [restaurantId],
+      [shopId],
     );
   }
 
   async createStaff(
-    restaurantId: string,
+    shopId: string,
     requesterAccountId: string,
     dto: CreateStaffDto,
     isSuperAdmin = false,
@@ -178,24 +178,24 @@ export class RestaurantStaffService {
 
     if (isSuperAdmin) {
       grantable = [...ALL_STAFF_PERMISSIONS];
-      // Parent será el admin raíz del restaurante
+      // Parent será el admin raíz del negocio
       const [ownerAdmin] = await this.dataSource.query(
         `SELECT a.id FROM admins a
          JOIN profiles p ON p.id = a.profile_id
          JOIN accounts acc ON acc.id = p.account_id
-         JOIN restaurants r ON r.owner_account_id = acc.id
-         WHERE r.id = $1 AND a.restaurant_id IS NULL AND a.parent_admin_id IS NULL
+         JOIN shops r ON r.owner_account_id = acc.id
+         WHERE r.id = $1 AND a.shop_id IS NULL AND a.parent_admin_id IS NULL
          LIMIT 1`,
-        [restaurantId],
+        [shopId],
       );
       if (!ownerAdmin)
         throw new NotFoundException(
-          'No se encontró el admin raíz del restaurante',
+          'No se encontró el admin raíz del negocio',
         );
       parentAdminId = ownerAdmin.id;
     } else {
       const requester = await this.getRequesterAdmin(
-        restaurantId,
+        shopId,
         requesterAccountId,
       );
       parentAdminId = requester.id;
@@ -245,12 +245,12 @@ export class RestaurantStaffService {
       );
 
       const [staffAdmin] = await manager.query(
-        `INSERT INTO admins (profile_id, restaurant_id, parent_admin_id, granted_permissions, role_name)
+        `INSERT INTO admins (profile_id, shop_id, parent_admin_id, granted_permissions, role_name)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id`,
         [
           profile.id,
-          restaurantId,
+          shopId,
           parentAdminId,
           dto.permissions,
           dto.roleName,
@@ -264,39 +264,39 @@ export class RestaurantStaffService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         roleName: dto.roleName,
-        restaurantId,
+        shopId,
         permissions: dto.permissions,
       };
     });
   }
 
   async updateStaffPermissions(
-    restaurantId: string,
+    shopId: string,
     staffAdminId: string,
     requesterAccountId: string,
     permissions: string[],
     isSuperAdmin = false,
   ) {
     if (isSuperAdmin) {
-      // Superadmin puede actualizar cualquier admin del restaurante (root o sub)
+      // Superadmin puede actualizar cualquier admin del negocio (root o sub)
       const [target] = await this.dataSource.query(
         `SELECT a.id, a.parent_admin_id
          FROM admins a
          LEFT JOIN profiles p ON p.id = a.profile_id
          WHERE a.id = $1
            AND (
-             a.restaurant_id = $2
+             a.shop_id = $2
              OR (
-               a.restaurant_id IS NULL
+               a.shop_id IS NULL
                AND p.account_id IN (
-                 SELECT owner_account_id FROM restaurants WHERE id = $2
+                 SELECT owner_account_id FROM shops WHERE id = $2
                )
              )
            )`,
-        [staffAdminId, restaurantId],
+        [staffAdminId, shopId],
       );
       if (!target)
-        throw new NotFoundException('Admin no encontrado en este restaurante');
+        throw new NotFoundException('Admin no encontrado en este negocio');
 
       await this.dataSource.query(
         'UPDATE admins SET granted_permissions = $1 WHERE id = $2',
@@ -317,11 +317,11 @@ export class RestaurantStaffService {
         );
       }
 
-      return { id: staffAdminId, restaurantId, permissions };
+      return { id: staffAdminId, shopId, permissions };
     }
 
     const requester = await this.getRequesterAdmin(
-      restaurantId,
+      shopId,
       requesterAccountId,
     );
 
@@ -333,29 +333,29 @@ export class RestaurantStaffService {
     this.assertPermissionsSubset(permissions, grantable);
 
     const [staff] = await this.dataSource.query(
-      'SELECT id FROM admins WHERE id = $1 AND restaurant_id = $2',
-      [staffAdminId, restaurantId],
+      'SELECT id FROM admins WHERE id = $1 AND shop_id = $2',
+      [staffAdminId, shopId],
     );
     if (!staff)
-      throw new NotFoundException('Personal no encontrado en este restaurante');
+      throw new NotFoundException('Personal no encontrado en este negocio');
 
     await this.dataSource.query(
       'UPDATE admins SET granted_permissions = $1 WHERE id = $2',
       [permissions, staffAdminId],
     );
 
-    return { id: staffAdminId, restaurantId, permissions };
+    return { id: staffAdminId, shopId, permissions };
   }
 
   async removeStaff(
-    restaurantId: string,
+    shopId: string,
     staffAdminId: string,
     requesterAccountId: string,
     isSuperAdmin = false,
   ) {
     if (!isSuperAdmin) {
       const requester = await this.getRequesterAdmin(
-        restaurantId,
+        shopId,
         requesterAccountId,
       );
       if (requester.parent_admin_id !== null) {
@@ -367,15 +367,15 @@ export class RestaurantStaffService {
       `SELECT a.id, p.account_id AS "accountId"
        FROM admins a
        JOIN profiles p ON p.id = a.profile_id
-       WHERE a.id = $1 AND a.restaurant_id = $2`,
-      [staffAdminId, restaurantId],
+       WHERE a.id = $1 AND a.shop_id = $2`,
+      [staffAdminId, shopId],
     );
     if (!staff)
-      throw new NotFoundException('Personal no encontrado en este restaurante');
+      throw new NotFoundException('Personal no encontrado en este negocio');
 
-    // Quitar rol restaurant_staff de su cuenta
+    // Quitar rol shop_staff de su cuenta
     await this.dataSource.query(
-      `UPDATE accounts SET roles = array_remove(roles, 'restaurant_staff') WHERE id = $1`,
+      `UPDATE accounts SET roles = array_remove(roles, 'shop_staff') WHERE id = $1`,
       [staff.accountId],
     );
 

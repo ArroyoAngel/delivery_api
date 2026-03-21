@@ -25,6 +25,16 @@ export class UsersService {
     return all.map((a) => this.toDto(a));
   }
 
+  async updateMyProfile(accountId: string, dto: { phone?: string; firstName?: string; lastName?: string }) {
+    const profile = await this.profiles.findOne({ where: { accountId } });
+    if (!profile) throw new NotFoundException('Perfil no encontrado');
+    if (dto.phone !== undefined) profile.phone = dto.phone;
+    if (dto.firstName !== undefined) profile.firstName = dto.firstName;
+    if (dto.lastName !== undefined) profile.lastName = dto.lastName;
+    await this.profiles.save(profile);
+    return { phone: profile.phone, firstName: profile.firstName, lastName: profile.lastName };
+  }
+
   async updateRoles(id: string, roles: string[]) {
     const account = await this.accounts.findOne({
       where: { id },
@@ -56,11 +66,11 @@ export class UsersService {
     }
 
     // Cascade: si el dueño pierde el rol 'admin', todos los staff derivados
-    // de su perfil admin pierden el rol 'restaurant_staff'.
+    // de su perfil admin pierden el rol 'shop_staff'.
     if (losesAdmin && account.profile) {
       await this.dataSource.query(
         `UPDATE accounts
-         SET roles = array_remove(roles, 'restaurant_staff')
+         SET roles = array_remove(roles, 'shop_staff')
          WHERE id IN (
            SELECT p.account_id
            FROM admins staff_admin

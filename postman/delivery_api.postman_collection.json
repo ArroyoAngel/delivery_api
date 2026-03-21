@@ -5,16 +5,19 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url",         "value": "http://localhost:3002/api", "type": "string" },
-    { "key": "token",            "value": "", "type": "string" },
-    { "key": "token_mario",      "value": "", "type": "string" },
-    { "key": "order_id",         "value": "", "type": "string" },
-    { "key": "restaurant_id",    "value": "c0000001-0000-0000-0000-000000000000", "type": "string" },
-    { "key": "menu_item_id",     "value": "", "type": "string" },
-    { "key": "address_id",       "value": "", "type": "string" },
-    { "key": "group_id",         "value": "", "type": "string" },
+    { "key": "base_url",          "value": "http://localhost:3002/api", "type": "string" },
+    { "key": "token",             "value": "", "type": "string" },
+    { "key": "token_mario",       "value": "", "type": "string" },
+    { "key": "token_casona",      "value": "", "type": "string" },
+    { "key": "order_id",          "value": "", "type": "string" },
+    { "key": "shop_id",           "value": "c0000001-0000-0000-0000-000000000000", "type": "string" },
+    { "key": "menu_item_id",      "value": "", "type": "string" },
+    { "key": "address_id",        "value": "", "type": "string" },
+    { "key": "group_id",          "value": "", "type": "string" },
     { "key": "payment_reference", "value": "", "type": "string" },
-    { "key": "webhook_secret",   "value": "webhook_secret_dev_2024", "type": "string" }
+    { "key": "withdrawal_id",     "value": "", "type": "string" },
+    { "key": "bank_account_id",   "value": "", "type": "string" },
+    { "key": "webhook_secret",    "value": "webhook_secret_dev_2024", "type": "string" }
   ],
   "item": [
 
@@ -35,7 +38,7 @@
           }
         },
         {
-          "name": "Login — mario (restaurant_owner)",
+          "name": "Login — mario (shop owner — Pizzería)",
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
             "const j = pm.response.json();",
             "if (j.accessToken) { pm.collectionVariables.set('token_mario', j.accessToken); console.log('Token mario guardado'); }"
@@ -45,6 +48,19 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/auth/login",
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"mario@pizzeria.com\",\n  \"password\": \"mario123\"\n}" }
+          }
+        },
+        {
+          "name": "Login — admin.casona (shop admin — La Casona)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "if (j.accessToken) { pm.collectionVariables.set('token_casona', j.accessToken); console.log('Token casona guardado'); }"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@lacasona.com\",\n  \"password\": \"casona123\"\n}" }
           }
         },
         {
@@ -68,17 +84,38 @@
     },
 
     {
-      "name": "Restaurantes",
+      "name": "Usuarios",
       "item": [
         {
-          "name": "Listar restaurantes",
+          "name": "Actualizar perfil",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/users/profile",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Luis\",\n  \"lastName\": \"García\",\n  \"phone\": \"+591 70000000\"\n}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Negocios (Shops)",
+      "item": [
+        {
+          "name": "Listar negocios",
           "request": {
             "method": "GET",
             "url": "{{base_url}}/restaurants"
           }
         },
         {
-          "name": "Buscar restaurante",
+          "name": "Buscar negocio",
           "request": {
             "method": "GET",
             "url": {
@@ -90,14 +127,14 @@
           }
         },
         {
-          "name": "Categorías de restaurantes",
+          "name": "Categorías de negocios",
           "request": {
             "method": "GET",
             "url": "{{base_url}}/restaurants/categories"
           }
         },
         {
-          "name": "Detalle restaurante + menú",
+          "name": "Detalle negocio + menú",
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
             "const j = pm.response.json();",
             "if (j.menu && j.menu.length > 0) {",
@@ -107,7 +144,7 @@
           ]}}],
           "request": {
             "method": "GET",
-            "url": "{{base_url}}/restaurants/{{restaurant_id}}"
+            "url": "{{base_url}}/restaurants/{{shop_id}}"
           }
         }
       ]
@@ -132,7 +169,7 @@
             "url": "{{base_url}}/orders",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"restaurantId\": \"{{restaurant_id}}\",\n  \"items\": [\n    { \"menuItemId\": \"{{menu_item_id}}\", \"quantity\": 2 }\n  ],\n  \"deliveryType\": \"delivery\",\n  \"deliveryAddress\": \"Av. 6 de Agosto 1234\",\n  \"notes\": \"Sin cebolla por favor\"\n}"
+              "raw": "{\n  \"restaurantId\": \"{{shop_id}}\",\n  \"items\": [\n    { \"menuItemId\": \"{{menu_item_id}}\", \"quantity\": 2 }\n  ],\n  \"deliveryType\": \"delivery\",\n  \"deliveryAddress\": \"Av. 6 de Agosto 1234\",\n  \"notes\": \"Sin cebolla por favor\"\n}"
             }
           }
         },
@@ -176,14 +213,14 @@
     },
 
     {
-      "name": "Pedidos — Restaurante (mario@pizzeria.com)",
+      "name": "Pedidos — Negocio (admin.casona)",
       "item": [
         {
-          "name": "Ver pedidos de mi restaurante",
+          "name": "Ver pedidos de mi negocio",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token_mario}}" }],
-            "url": "{{base_url}}/orders/restaurant/mine"
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_casona}}" }],
+            "url": "{{base_url}}/orders/shop/mine"
           }
         },
         {
@@ -192,7 +229,7 @@
             "method": "PUT",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token_mario}}" }
+              { "key": "Authorization", "value": "Bearer {{token_casona}}" }
             ],
             "url": "{{base_url}}/orders/{{order_id}}/preparing"
           }
@@ -208,7 +245,7 @@
             "method": "PUT",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token_mario}}" }
+              { "key": "Authorization", "value": "Bearer {{token_casona}}" }
             ],
             "url": "{{base_url}}/orders/{{order_id}}/ready"
           }
@@ -341,7 +378,7 @@
           }
         },
         {
-          "name": "Admin: Resumen financiero",
+          "name": "Admin (SA): Resumen financiero global",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
@@ -349,7 +386,7 @@
           }
         },
         {
-          "name": "Admin: Listado de pagos",
+          "name": "Admin (SA): Listado de pagos",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
@@ -362,7 +399,7 @@
           }
         },
         {
-          "name": "Admin: Cuentas bancarias",
+          "name": "Admin (SA): Cuentas bancarias (todos)",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
@@ -370,7 +407,14 @@
           }
         },
         {
-          "name": "Admin: Solicitudes de retiro",
+          "name": "Admin (SA): Solicitudes de retiro (todas)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "if (Array.isArray(j) && j.length > 0) {",
+            "  pm.collectionVariables.set('withdrawal_id', j[0].id);",
+            "  console.log('withdrawal_id guardado:', j[0].id, '— estado:', j[0].status);",
+            "}"
+          ]}}],
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
@@ -383,31 +427,137 @@
           }
         },
         {
-          "name": "Restaurante: Mis ingresos",
+          "name": "Admin (SA): Aprobar o rechazar retiro",
           "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token_mario}}" }],
-            "url": "{{base_url}}/payments/admin/my/income"
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/payments/admin/withdrawals/{{withdrawal_id}}/process",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"completed\",\n  \"externalTransferId\": \"BNB-TRANSFER-001\",\n  \"notes\": \"Transferido el 21/03/2026\"\n}"
+            }
           }
         },
         {
-          "name": "Restaurante: Mis cuentas bancarias",
+          "name": "Admin (SA): Ingresos de un negocio específico",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token_mario}}" }],
-            "url": "{{base_url}}/payments/admin/my/bank-accounts"
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/payments/admin/shop/{{shop_id}}/income"
           }
         },
         {
-          "name": "Restaurante: Mis retiros",
+          "name": "Admin (SA): Cuentas bancarias de un negocio específico",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token_mario}}" }],
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/payments/admin/shop/{{shop_id}}/bank-accounts"
+          }
+        },
+        {
+          "name": "Admin (SA): Retiros de un negocio específico",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
             "url": {
-              "raw": "{{base_url}}/payments/admin/my/withdrawals?limit=100",
+              "raw": "{{base_url}}/payments/admin/shop/{{shop_id}}/withdrawals?limit=100",
               "host": ["{{base_url}}"],
-              "path": ["payments", "admin", "my", "withdrawals"],
+              "path": ["payments", "admin", "shop", "{{shop_id}}", "withdrawals"],
               "query": [{ "key": "limit", "value": "100" }]
+            }
+          }
+        },
+        {
+          "name": "Negocio: Mis ingresos + saldo disponible",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_casona}}" }],
+            "url": "{{base_url}}/payments/my/income"
+          }
+        },
+        {
+          "name": "Negocio: Mis cuentas bancarias",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "if (Array.isArray(j) && j.length > 0) {",
+            "  pm.collectionVariables.set('bank_account_id', j[0].id);",
+            "  console.log('bank_account_id guardado:', j[0].id);",
+            "}"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_casona}}" }],
+            "url": "{{base_url}}/payments/my/bank-accounts"
+          }
+        },
+        {
+          "name": "Negocio: Mis solicitudes de retiro",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_casona}}" }],
+            "url": {
+              "raw": "{{base_url}}/payments/my/withdrawals?limit=100",
+              "host": ["{{base_url}}"],
+              "path": ["payments", "my", "withdrawals"],
+              "query": [{ "key": "limit", "value": "100" }]
+            }
+          }
+        },
+        {
+          "name": "Negocio: Solicitar retiro de fondos",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "if (j.id) { pm.collectionVariables.set('withdrawal_id', j.id); console.log('withdrawal_id guardado:', j.id, '— monto:', j.amount); }"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token_casona}}" }
+            ],
+            "url": "{{base_url}}/payments/my/withdrawal",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 50,\n  \"bankAccountId\": \"{{bank_account_id}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "AI Chat",
+      "item": [
+        {
+          "name": "Chat — canal app (cliente)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/ai/chat",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Quiero pedir una pizza de la casona\",\n  \"channel\": \"app\",\n  \"shopId\": \"{{shop_id}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Chat — canal telegram (simulado)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/ai/chat",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Hola, quiero hacer un pedido\",\n  \"channel\": \"telegram\",\n  \"shopId\": \"{{shop_id}}\"\n}"
             }
           }
         }

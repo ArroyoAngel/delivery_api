@@ -65,7 +65,7 @@ export class OrdersController {
   @Post('express-checkout')
   @ApiOperation({
     summary:
-      'Checkout express multi-restaurante — crea un grupo de entrega inmediato',
+      'Checkout express multi-negocio — crea un grupo de entrega inmediato',
   })
   expressCheckout(@Request() req, @Body() dto: ExpressCheckoutDto) {
     return this.orders.expressCheckout(req.user.id, dto);
@@ -86,44 +86,44 @@ export class OrdersController {
     return this.orders.updateStatus(id, body.status);
   }
 
-  @Get('restaurant/mine')
+  @Get('shop/mine')
   @UseGuards(CasbinGuard)
-  @ApiOperation({ summary: 'Pedidos de mi restaurante' })
-  restaurantOrders(@Request() req) {
-    return this.orders.findRestaurantOrders(req.user.id);
+  @ApiOperation({ summary: 'Pedidos de mi negocio' })
+  shopOrders(@Request() req) {
+    return this.orders.findShopOrders(req.user.id);
   }
 
-  @Get('restaurant/local/areas')
+  @Get('shop/local/areas')
   @UseGuards(CasbinGuard)
   @ApiOperation({ summary: 'Áreas/mesas para servicio en local' })
-  restaurantLocalAreas(@Request() req) {
-    return this.orders.getRestaurantServiceAreas(req.user.id);
+  shopLocalAreas(@Request() req) {
+    return this.orders.getShopServiceAreas(req.user.id);
   }
 
-  @Post('restaurant/local/areas')
+  @Post('shop/local/areas')
   @UseGuards(CasbinGuard)
   @ApiOperation({ summary: 'Crear área/mesa para servicio en local' })
-  createRestaurantLocalArea(
+  createShopLocalArea(
     @Request() req,
     @Body() dto: CreateRestaurantServiceAreaDto,
   ) {
-    return this.orders.createRestaurantServiceArea(req.user.id, dto);
+    return this.orders.createShopServiceArea(req.user.id, dto);
   }
 
-  @Post('restaurant/local/cash')
+  @Post('shop/local/cash')
   @UseGuards(CasbinGuard)
   @ApiOperation({
     summary:
       'Registrar orden local/recogida pagada en efectivo (estado confirmado)',
   })
-  createRestaurantLocalCashOrder(
+  createShopLocalCashOrder(
     @Request() req,
     @Body() dto: CreateRestaurantLocalOrderDto,
   ) {
-    return this.orders.createRestaurantLocalCashOrder(req.user.id, dto);
+    return this.orders.createShopLocalCashOrder(req.user.id, dto);
   }
 
-  // ── Estado: confirmado → preparando (admin/restaurante) ──────────────────
+  // ── Estado: confirmado → preparando (admin/negocio) ──────────────────
   @Put(':id/preparing')
   @UseGuards(CasbinGuard)
   @ApiOperation({ summary: 'Marcar pedido en preparación — admin' })
@@ -131,7 +131,7 @@ export class OrdersController {
     return this.groups.markOrderPreparing(id, req.user.id);
   }
 
-  // ── Estado: preparando → listo (admin/restaurante) ───────────────────────
+  // ── Estado: preparando → listo (admin/negocio) ───────────────────────
   @Put(':id/ready')
   @UseGuards(CasbinGuard)
   @ApiOperation({ summary: 'Marcar pedido listo para recoger — admin' })
@@ -139,10 +139,10 @@ export class OrdersController {
     return this.groups.markOrderReady(id, req.user.id);
   }
 
-  // ── Estado: listo → en_camino (rider recogió del restaurante) ────────────
+  // ── Estado: listo → en_camino (rider recogió del negocio) ────────────
   @Put(':id/on-the-way')
   @UseGuards(CasbinGuard)
-  @ApiOperation({ summary: 'Confirmar recogida del restaurante — rider' })
+  @ApiOperation({ summary: 'Confirmar recogida del negocio — rider' })
   markOnTheWay(@Request() req: any, @Param('id') id: string) {
     return this.groups.markOrderPickedUp(req.user.id, id);
   }

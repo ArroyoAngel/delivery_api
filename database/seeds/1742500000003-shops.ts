@@ -4,18 +4,18 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Restaurantes iniciales de YaYa Eats — Santa Cruz de la Sierra, Bolivia.
  * Coordenadas alrededor de Plaza 24 de Septiembre.
  */
-export class Restaurants1742500000003 implements MigrationInterface {
+export class Shops1742500000003 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
 
     // ── categorías ────────────────────────────────────────────────────────
     await queryRunner.query(`
-      INSERT INTO restaurant_categories (id, name, icon, sort_order) VALUES
-        ('a1000000-0000-0000-0000-000000000001', 'Parrilla',    '🥩', 1),
-        ('a1000000-0000-0000-0000-000000000002', 'Criolla',     '🍲', 2),
-        ('a1000000-0000-0000-0000-000000000003', 'Sushi',       '🍣', 3),
-        ('a1000000-0000-0000-0000-000000000004', 'Hamburguesas','🍔', 4),
-        ('a1000000-0000-0000-0000-000000000005', 'Pizza',       '🍕', 5),
-        ('a1000000-0000-0000-0000-000000000006', 'Pollo',       '🍗', 6)
+      INSERT INTO shop_categories (id, name, icon, sort_order, business_type) VALUES
+        ('a1000000-0000-0000-0000-000000000001', 'Parrilla',    '🥩', 1, 'restaurant'),
+        ('a1000000-0000-0000-0000-000000000002', 'Criolla',     '🍲', 2, 'restaurant'),
+        ('a1000000-0000-0000-0000-000000000003', 'Sushi',       '🍣', 3, 'restaurant'),
+        ('a1000000-0000-0000-0000-000000000004', 'Hamburguesas','🍔', 4, 'restaurant'),
+        ('a1000000-0000-0000-0000-000000000005', 'Pizza',       '🍕', 5, 'restaurant'),
+        ('a1000000-0000-0000-0000-000000000006', 'Pollo',       '🍗', 6, 'restaurant')
       ON CONFLICT (id) DO NOTHING
     `);
 
@@ -55,10 +55,10 @@ export class Restaurants1742500000003 implements MigrationInterface {
 
     for (const r of restaurants) {
       await queryRunner.query(
-        `INSERT INTO restaurants
+        `INSERT INTO shops
            (id, owner_account_id, name, description, address, latitude, longitude,
-            category_id, delivery_fee, delivery_time_min)
-         SELECT $1, a.id, $3, $4, $5, $6, $7, $8, $9, $10
+            category_id, delivery_fee, delivery_time_min, business_type)
+         SELECT $1, a.id, $3, $4, $5, $6, $7, $8, $9, $10, 'restaurant'
            FROM accounts a WHERE a.email = $2
          ON CONFLICT (id) DO NOTHING`,
         [r.id, r.owner, r.name, r.desc, r.address, r.lat, r.lng, r.cat, r.fee, r.time],
@@ -67,21 +67,21 @@ export class Restaurants1742500000003 implements MigrationInterface {
 
     // ── vincular admins con sus restaurantes ──────────────────────────────
     await queryRunner.query(`
-      UPDATE admins SET restaurant_id = 'b1000000-0000-0000-0000-000000000001'
+      UPDATE admins SET shop_id = 'b1000000-0000-0000-0000-000000000001'
       WHERE profile_id = (
         SELECT p.id FROM profiles p JOIN accounts a ON a.id = p.account_id
         WHERE a.email = 'admin.fogon@yayaeats.com'
       )
     `);
     await queryRunner.query(`
-      UPDATE admins SET restaurant_id = 'b1000000-0000-0000-0000-000000000002'
+      UPDATE admins SET shop_id = 'b1000000-0000-0000-0000-000000000002'
       WHERE profile_id = (
         SELECT p.id FROM profiles p JOIN accounts a ON a.id = p.account_id
         WHERE a.email = 'admin.casona@yayaeats.com'
       )
     `);
     await queryRunner.query(`
-      UPDATE admins SET restaurant_id = 'b1000000-0000-0000-0000-000000000003'
+      UPDATE admins SET shop_id = 'b1000000-0000-0000-0000-000000000003'
       WHERE profile_id = (
         SELECT p.id FROM profiles p JOIN accounts a ON a.id = p.account_id
         WHERE a.email = 'admin.sushi@yayaeats.com'
@@ -90,13 +90,13 @@ export class Restaurants1742500000003 implements MigrationInterface {
 
     // ── menú: El Fogón Cruceño ─────────────────────────────────────────────
     await queryRunner.query(`
-      INSERT INTO menu_categories (restaurant_id, name, sort_order) VALUES
+      INSERT INTO menu_categories (shop_id, name, sort_order) VALUES
         ('b1000000-0000-0000-0000-000000000001', 'Parrillas',   1),
         ('b1000000-0000-0000-0000-000000000001', 'Acompañados', 2),
         ('b1000000-0000-0000-0000-000000000001', 'Bebidas',     3)
     `);
     await queryRunner.query(`
-      INSERT INTO menu_items (restaurant_id, category_id, name, price, preparation_time_min)
+      INSERT INTO menu_items (shop_id, category_id, name, price, preparation_time_min)
       SELECT 'b1000000-0000-0000-0000-000000000001', mc.id, item.name, item.price, item.prep
       FROM menu_categories mc
       JOIN (VALUES
@@ -107,18 +107,18 @@ export class Restaurants1742500000003 implements MigrationInterface {
         ('Bebidas',     'Tujuré',              12.00,  3),
         ('Bebidas',     'Refresco natural',    10.00,  3)
       ) AS item(cat, name, price, prep) ON mc.name = item.cat
-      WHERE mc.restaurant_id = 'b1000000-0000-0000-0000-000000000001'
+      WHERE mc.shop_id = 'b1000000-0000-0000-0000-000000000001'
     `);
 
     // ── menú: La Casona ────────────────────────────────────────────────────
     await queryRunner.query(`
-      INSERT INTO menu_categories (restaurant_id, name, sort_order) VALUES
+      INSERT INTO menu_categories (shop_id, name, sort_order) VALUES
         ('b1000000-0000-0000-0000-000000000002', 'Platos principales', 1),
         ('b1000000-0000-0000-0000-000000000002', 'Sopas',              2),
         ('b1000000-0000-0000-0000-000000000002', 'Bebidas',            3)
     `);
     await queryRunner.query(`
-      INSERT INTO menu_items (restaurant_id, category_id, name, price, preparation_time_min)
+      INSERT INTO menu_items (shop_id, category_id, name, price, preparation_time_min)
       SELECT 'b1000000-0000-0000-0000-000000000002', mc.id, item.name, item.price, item.prep
       FROM menu_categories mc
       JOIN (VALUES
@@ -129,18 +129,18 @@ export class Restaurants1742500000003 implements MigrationInterface {
         ('Bebidas',            'Mocochinchi',          10.00,  3),
         ('Bebidas',            'Chicha morada',        10.00,  3)
       ) AS item(cat, name, price, prep) ON mc.name = item.cat
-      WHERE mc.restaurant_id = 'b1000000-0000-0000-0000-000000000002'
+      WHERE mc.shop_id = 'b1000000-0000-0000-0000-000000000002'
     `);
 
     // ── menú: Sushi Zen ────────────────────────────────────────────────────
     await queryRunner.query(`
-      INSERT INTO menu_categories (restaurant_id, name, sort_order) VALUES
+      INSERT INTO menu_categories (shop_id, name, sort_order) VALUES
         ('b1000000-0000-0000-0000-000000000003', 'Rolls',    1),
         ('b1000000-0000-0000-0000-000000000003', 'Nigiri',   2),
         ('b1000000-0000-0000-0000-000000000003', 'Bebidas',  3)
     `);
     await queryRunner.query(`
-      INSERT INTO menu_items (restaurant_id, category_id, name, price, preparation_time_min)
+      INSERT INTO menu_items (shop_id, category_id, name, price, preparation_time_min)
       SELECT 'b1000000-0000-0000-0000-000000000003', mc.id, item.name, item.price, item.prep
       FROM menu_categories mc
       JOIN (VALUES
@@ -152,7 +152,7 @@ export class Restaurants1742500000003 implements MigrationInterface {
         ('Bebidas', 'Agua mineral',              10.00,  2),
         ('Bebidas', 'Té verde',                  12.00,  5)
       ) AS item(cat, name, price, prep) ON mc.name = item.cat
-      WHERE mc.restaurant_id = 'b1000000-0000-0000-0000-000000000003'
+      WHERE mc.shop_id = 'b1000000-0000-0000-0000-000000000003'
     `);
 
     // ── system_config ─────────────────────────────────────────────────────
@@ -167,14 +167,14 @@ export class Restaurants1742500000003 implements MigrationInterface {
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      DELETE FROM restaurants WHERE id IN (
+      DELETE FROM shops WHERE id IN (
         'b1000000-0000-0000-0000-000000000001',
         'b1000000-0000-0000-0000-000000000002',
         'b1000000-0000-0000-0000-000000000003'
       )
     `);
     await queryRunner.query(`
-      DELETE FROM restaurant_categories WHERE id LIKE 'a1000000%'
+      DELETE FROM shop_categories WHERE id LIKE 'a1000000%'
     `);
     await queryRunner.query(`
       DELETE FROM system_config WHERE key IN (

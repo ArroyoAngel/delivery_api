@@ -58,18 +58,18 @@ export class OrdersHistory1742500000006 implements MigrationInterface {
     );
 
     // ── IDs de menu items ─────────────────────────────────────────────────
-    const itemRows: { name: string; id: string; price: string; restaurant_id: string }[] =
+    const itemRows: { name: string; id: string; price: string; shop_id: string }[] =
       await queryRunner.query(
-        `SELECT mi.name, mi.id, mi.price, mi.restaurant_id
+        `SELECT mi.name, mi.id, mi.price, mi.shop_id
          FROM menu_items mi
-         WHERE mi.restaurant_id IN (
+         WHERE mi.shop_id IN (
            'b1000000-0000-0000-0000-000000000001',
            'b1000000-0000-0000-0000-000000000002',
            'b1000000-0000-0000-0000-000000000003'
          )`,
       );
     const item = (restId: string, name: string) =>
-      itemRows.find(r => r.restaurant_id === restId && r.name === name)!;
+      itemRows.find(r => r.shop_id === restId && r.name === name)!;
 
     // ── Constantes ────────────────────────────────────────────────────────
     const R = {
@@ -130,7 +130,7 @@ export class OrdersHistory1742500000006 implements MigrationInterface {
 
       await queryRunner.query(
         `INSERT INTO orders
-           (id, client_id, restaurant_id, rider_id, status, delivery_type,
+           (id, client_id, shop_id, rider_id, status, delivery_type,
             delivery_address, delivery_lat, delivery_lng,
             total, delivery_fee, group_id, order_size, created_at, updated_at)
          VALUES ($1, $2, $3, $4, 'entregado', 'delivery',

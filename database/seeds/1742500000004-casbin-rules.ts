@@ -35,28 +35,28 @@ export class CasbinRules1742500000004 implements MigrationInterface {
       [AD, '/api/orders/admin/all',       'GET'],
       [SA, '/api/orders/admin/stats',     'GET'],
       [SA, '/api/orders/:id/status',      'PUT'],
-      [SA, '/api/orders/restaurant/mine', 'GET'],
-      [AD, '/api/orders/restaurant/mine', 'GET'],
+      [SA, '/api/orders/shop/mine', 'GET'],
+      [AD, '/api/orders/shop/mine', 'GET'],
 
-      // Restaurants — endpoints con CasbinGuard
-      [SA, '/api/restaurants/mine',                     'GET'],
-      [AD, '/api/restaurants/mine',                     'GET'],
-      [SA, '/api/restaurants/:id',                      'PATCH'],
-      [AD, '/api/restaurants/:id',                      'PATCH'],
-      [SA, '/api/restaurants/:id/menu/categories',      'POST'],
-      [AD, '/api/restaurants/:id/menu/categories',      'POST'],
-      [SA, '/api/restaurants/:id/menu',                 'POST'],
-      [AD, '/api/restaurants/:id/menu',                 'POST'],
-      [SA, '/api/restaurants/:id/menu/:itemId',         'PATCH'],
-      [AD, '/api/restaurants/:id/menu/:itemId',         'PATCH'],
-      [SA, '/api/restaurants/:id/staff',                'GET|POST'],
-      [AD, '/api/restaurants/:id/staff',                'GET|POST'],
-      [SA, '/api/restaurants/:id/staff/:staffId',       'PATCH|DELETE'],
-      [AD, '/api/restaurants/:id/staff/:staffId',       'PATCH|DELETE'],
-      [SA, '/api/restaurants/:id/schedule',             'GET|PUT'],
-      [AD, '/api/restaurants/:id/schedule',             'GET|PUT'],
-      [SA, '/api/restaurants/:id/schedule/:day',        'PATCH'],
-      [AD, '/api/restaurants/:id/schedule/:day',        'PATCH'],
+      // Shops — endpoints con CasbinGuard
+      [SA, '/api/shops/mine',                     'GET'],
+      [AD, '/api/shops/mine',                     'GET'],
+      [SA, '/api/shops/:id',                      'PATCH'],
+      [AD, '/api/shops/:id',                      'PATCH'],
+      [SA, '/api/shops/:id/menu/categories',      'POST'],
+      [AD, '/api/shops/:id/menu/categories',      'POST'],
+      [SA, '/api/shops/:id/menu',                 'POST'],
+      [AD, '/api/shops/:id/menu',                 'POST'],
+      [SA, '/api/shops/:id/menu/:itemId',         'PATCH'],
+      [AD, '/api/shops/:id/menu/:itemId',         'PATCH'],
+      [SA, '/api/shops/:id/staff',                'GET|POST'],
+      [AD, '/api/shops/:id/staff',                'GET|POST'],
+      [SA, '/api/shops/:id/staff/:staffId',       'PATCH|DELETE'],
+      [AD, '/api/shops/:id/staff/:staffId',       'PATCH|DELETE'],
+      [SA, '/api/shops/:id/schedule',             'GET|PUT'],
+      [AD, '/api/shops/:id/schedule',             'GET|PUT'],
+      [SA, '/api/shops/:id/schedule/:day',        'PATCH'],
+      [AD, '/api/shops/:id/schedule/:day',        'PATCH'],
 
       // Rider — todos los endpoints tienen CasbinGuard a nivel de clase
       [SA, '/api/rider/list',                      'GET'],
@@ -119,14 +119,14 @@ export class CasbinRules1742500000004 implements MigrationInterface {
       [AD, '/dashboard/orders'],
       [RI, '/dashboard/orders'],
 
-      // Mi restaurante — solo admin (superadmin usa /dashboard/restaurants)
-      [AD, '/dashboard/my-restaurant'],
+      // Mi negocio — solo admin (superadmin usa /dashboard/shops)
+      [AD, '/dashboard/my-shop'],
 
-      // Personal del restaurante — solo admin (superadmin no necesita Mi Personal)
+      // Personal del negocio — solo admin (superadmin no necesita Mi Personal)
       [AD, '/dashboard/staff'],
 
       // Solo superadmin
-      [SA, '/dashboard/restaurants'],
+      [SA, '/dashboard/shops'],
       [SA, '/dashboard/users'],
       [SA, '/dashboard/config'],
       [SA, '/dashboard/roles'],
@@ -135,9 +135,9 @@ export class CasbinRules1742500000004 implements MigrationInterface {
       [SA, '/dashboard/payments'],
       [SA, '/dashboard/bank-accounts'],
       [SA, '/dashboard/withdrawals'],
-      [AD, '/dashboard/my-restaurant/income'],
-      [AD, '/dashboard/my-restaurant/bank-accounts'],
-      [AD, '/dashboard/my-restaurant/withdrawals'],
+      [AD, '/dashboard/my-shop/income'],
+      [AD, '/dashboard/my-shop/bank-accounts'],
+      [AD, '/dashboard/my-shop/withdrawals'],
 
       // Repartidores: superadmin y admin
       [SA, '/dashboard/riders'],

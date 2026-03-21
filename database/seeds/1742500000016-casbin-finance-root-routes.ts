@@ -5,16 +5,16 @@ export class CasbinFinanceRootRoutes1742500000016 implements MigrationInterface 
   name = 'CasbinFinanceRootRoutes1742500000016';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // ── Eliminar rutas my-restaurant/* del rol admin (frontend) ─────────────
+    // ── Eliminar rutas my-shop/* del rol admin (frontend) ─────────────
     await queryRunner.query(
       `DELETE FROM casbin_rule
        WHERE ptype = 'p'
          AND v0 = 'admin'
          AND v4 = 'frontend'
          AND v1 IN (
-           '/dashboard/my-restaurant/income',
-           '/dashboard/my-restaurant/bank-accounts',
-           '/dashboard/my-restaurant/withdrawals'
+           '/dashboard/my-shop/income',
+           '/dashboard/my-shop/bank-accounts',
+           '/dashboard/my-shop/withdrawals'
          )`,
     );
 
@@ -40,11 +40,11 @@ export class CasbinFinanceRootRoutes1742500000016 implements MigrationInterface 
        ON CONFLICT DO NOTHING`,
     );
 
-    // ── Agregar endpoints backend per-restaurante al rol superadmin ────────
+    // ── Agregar endpoints backend per-shop al rol superadmin ────────
     const saBackendRoutes = [
-      '/api/payments/admin/restaurant/:id/income',
-      '/api/payments/admin/restaurant/:id/bank-accounts',
-      '/api/payments/admin/restaurant/:id/withdrawals',
+      '/api/payments/admin/shop/:id/income',
+      '/api/payments/admin/shop/:id/bank-accounts',
+      '/api/payments/admin/shop/:id/withdrawals',
     ];
     for (const route of saBackendRoutes) {
       await queryRunner.query(
@@ -79,24 +79,24 @@ export class CasbinFinanceRootRoutes1742500000016 implements MigrationInterface 
          AND v1 = '/dashboard/income'`,
     );
 
-    // Eliminar backend per-restaurante de superadmin
+    // Eliminar backend per-shop de superadmin
     await queryRunner.query(
       `DELETE FROM casbin_rule
        WHERE ptype = 'p'
          AND v0 = 'superadmin'
          AND v4 = 'backend'
          AND v1 IN (
-           '/api/payments/admin/restaurant/:id/income',
-           '/api/payments/admin/restaurant/:id/bank-accounts',
-           '/api/payments/admin/restaurant/:id/withdrawals'
+           '/api/payments/admin/shop/:id/income',
+           '/api/payments/admin/shop/:id/bank-accounts',
+           '/api/payments/admin/shop/:id/withdrawals'
          )`,
     );
 
-    // Restaurar rutas my-restaurant/* al rol admin
+    // Restaurar rutas my-shop/* al rol admin
     const adminMyRoutes = [
-      '/dashboard/my-restaurant/income',
-      '/dashboard/my-restaurant/bank-accounts',
-      '/dashboard/my-restaurant/withdrawals',
+      '/dashboard/my-shop/income',
+      '/dashboard/my-shop/bank-accounts',
+      '/dashboard/my-shop/withdrawals',
     ];
     for (const route of adminMyRoutes) {
       await queryRunner.query(

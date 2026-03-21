@@ -48,13 +48,15 @@ export class DeliveryGroupsService {
   }
 
   async saveLocationSegment(
-    riderId: string,
+    accountId: string,
     path: string,
     startedAt: string,
     endedAt: string,
     intervalSeconds: number,
   ) {
     if (!path) return { inserted: 0 };
+    const riderId = await this.resolveRiderId(accountId);
+    if (!riderId) return { inserted: 0 };
     const clamped = Math.min(Math.max(1, intervalSeconds), 300);
     await this.dataSource.query(
       `INSERT INTO rider_location_history (rider_id, path, started_at, ended_at, interval_seconds)
@@ -104,9 +106,9 @@ export class DeliveryGroupsService {
               o.delivery_lng AS "deliveryLng",
               o.updated_at AS "deliveredAt",
               o.created_at AS "createdAt",
-              r.name AS "restaurantName"
+              r.name AS "shopName"
        FROM orders o
-       JOIN restaurants r ON r.id = o.restaurant_id
+       JOIN shops r ON r.id = o.shop_id
        WHERE o.rider_id = $1 AND o.status = 'entregado'
        ${dateClause}
        ORDER BY o.updated_at DESC`,
@@ -125,22 +127,22 @@ export class DeliveryGroupsService {
     return row?.id ?? null;
   }
 
-  private async assertRestaurantOrderManageAccess(
+  private async assertShopOrderManageAccess(
     orderId: string,
     accountId: string,
   ): Promise<void> {
     const [order] = await this.dataSource.query(
-      `SELECT restaurant_id FROM orders WHERE id = $1 LIMIT 1`,
+      `SELECT shop_id FROM orders WHERE id = $1 LIMIT 1`,
       [orderId],
     );
-    if (!order?.restaurant_id)
+    if (!order?.shop_id)
       throw new NotFoundException('Orden no encontrada');
 
     const [owner] = await this.dataSource.query(
       `SELECT 1
-       FROM restaurants
+       FROM shops
        WHERE id = $1 AND owner_account_id = $2`,
-      [order.restaurant_id, accountId],
+      [order.shop_id, accountId],
     );
     if (owner) return;
 
@@ -148,10 +150,10 @@ export class DeliveryGroupsService {
       `SELECT 1
        FROM admins a
        JOIN profiles p ON p.id = a.profile_id
-       WHERE a.restaurant_id = $1
+       WHERE a.shop_id = $1
          AND p.account_id = $2
          AND 'manage_orders' = ANY(a.granted_permissions)`,
-      [order.restaurant_id, accountId],
+      [order.shop_id, accountId],
     );
     if (!staff) {
       throw new ForbiddenException(
@@ -184,7 +186,7 @@ export class DeliveryGroupsService {
   async tryGroupOrders(): Promise<DeliveryGroupEntity[]> {
     const maxOrders = await this.cfg.getNumber('max_orders_per_group', 3);
     const radiusMeters = await this.cfg.getNumber(
-      'nearby_restaurant_radius_meters',
+      'nearby_shop_radius_meters',
       200,
     );
 
@@ -203,16 +205,16 @@ export class DeliveryGroupsService {
       if (o.deliveryType === 'express') assigned.add(o.id);
     }
 
-    // Obtenemos info de restaurantes para los pedidos regulares
-    const restaurantIds = [...new Set(ungrouped.map((o) => o.restaurantId))];
-    const restaurants: { id: string; latitude: number; longitude: number }[] =
-      restaurantIds.length > 0
+    // Obtenemos info de negocios para los pedidos regulares
+    const shopIds = [...new Set(ungrouped.map((o) => o.shopId))];
+    const shops: { id: string; latitude: number; longitude: number }[] =
+      shopIds.length > 0
         ? await this.dataSource.query(
-            `SELECT id, latitude, longitude FROM restaurants WHERE id = ANY($1)`,
-            [restaurantIds],
+            `SELECT id, latitude, longitude FROM shops WHERE id = ANY($1)`,
+            [shopIds],
           )
         : [];
-    const restMap = new Map(restaurants.map((r) => [r.id, r]));
+    const restMap = new Map(shops.map((r) => [r.id, r]));
 
     for (const seed of ungrouped) {
       if (assigned.has(seed.id)) continue;
@@ -220,23 +222,23 @@ export class DeliveryGroupsService {
       const group: OrderEntity[] = [seed];
       assigned.add(seed.id);
 
-      // 1. Pedidos del mismo restaurante
+      // 1. Pedidos del mismo negocio
       for (const o of ungrouped) {
         if (group.length >= maxOrders) break;
-        if (assigned.has(o.id) || o.restaurantId !== seed.restaurantId)
+        if (assigned.has(o.id) || o.shopId !== seed.shopId)
           continue;
         group.push(o);
         assigned.add(o.id);
       }
 
-      // 2. Si no llegamos a maxOrders, buscamos restaurantes cercanos
+      // 2. Si no llegamos a maxOrders, buscamos negocios cercanos
       if (group.length < maxOrders) {
-        const seedRest = restMap.get(seed.restaurantId);
+        const seedRest = restMap.get(seed.shopId);
         if (seedRest) {
           for (const o of ungrouped) {
             if (group.length >= maxOrders) break;
             if (assigned.has(o.id)) continue;
-            const otherRest = restMap.get(o.restaurantId);
+            const otherRest = restMap.get(o.shopId);
             if (!otherRest) continue;
             const dist = haversineMeters(
               Number(seedRest.latitude),
@@ -315,8 +317,9 @@ export class DeliveryGroupsService {
 
   async markOrderPickedUp(accountId: string, orderId: string) {
     const riderId = await this.resolveRiderId(accountId);
+    if (!riderId) throw new ForbiddenException('No estás registrado como repartidor');
     const order = await this.orders.findOne({
-      where: { id: orderId, riderId: riderId ?? undefined },
+      where: { id: orderId, riderId },
     });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (order.status !== 'listo')
@@ -331,7 +334,7 @@ export class DeliveryGroupsService {
   }
 
   async markOrderPreparing(orderId: string, accountId: string) {
-    await this.assertRestaurantOrderManageAccess(orderId, accountId);
+    await this.assertShopOrderManageAccess(orderId, accountId);
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (!['confirmado', 'pendiente'].includes(order.status)) {
@@ -348,8 +351,9 @@ export class DeliveryGroupsService {
 
   async markOrderDelivered(accountId: string, orderId: string) {
     const riderId = await this.resolveRiderId(accountId);
+    if (!riderId) throw new ForbiddenException('No estás registrado como repartidor');
     const order = await this.orders.findOne({
-      where: { id: orderId, riderId: riderId ?? undefined },
+      where: { id: orderId, riderId },
     });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (order.status === 'entregado') return { message: 'Ya entregado' };
@@ -362,6 +366,29 @@ export class DeliveryGroupsService {
     this.notifications
       .notifyClientOrderStatus(order.clientId, 'entregado')
       .catch(() => null);
+
+    // Transferir delivery fee al wallet del repartidor
+    if (riderId) {
+      const [pendingTx] = await this.dataSource.query(
+        `SELECT id, amount, payment_id
+         FROM wallet_transactions
+         WHERE order_id = $1 AND status = 'pending_rider'
+         LIMIT 1`,
+        [orderId],
+      );
+      if (pendingTx) {
+        await this.dataSource.query(
+          `UPDATE wallet_transactions SET status = 'paid_to_rider' WHERE id = $1`,
+          [pendingTx.id],
+        );
+        await this.dataSource.query(
+          `INSERT INTO wallet_transactions
+             (owner_type, owner_id, payment_id, order_id, entry_type, amount, status, description)
+           VALUES ('rider', $1, $2, $3, 'credit', $4, 'confirmed', 'Delivery completado')`,
+          [riderId, pendingTx.payment_id, orderId, pendingTx.amount],
+        );
+      }
+    }
 
     // Verificar si todos los pedidos del grupo están entregados
     if (order.groupId) {
@@ -422,7 +449,7 @@ export class DeliveryGroupsService {
   }
 
   async markOrderReady(orderId: string, accountId: string) {
-    await this.assertRestaurantOrderManageAccess(orderId, accountId);
+    await this.assertShopOrderManageAccess(orderId, accountId);
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     if (!['preparando', 'confirmado'].includes(order.status)) {
@@ -451,7 +478,7 @@ export class DeliveryGroupsService {
   async forceGroupExpiredOrders(): Promise<void> {
     const waitMinutes = await this.cfg.getNumber('group_wait_minutes', 5);
     const radiusMeters = await this.cfg.getNumber(
-      'nearby_restaurant_radius_meters',
+      'nearby_shop_radius_meters',
       200,
     );
     const cutoff = new Date(Date.now() - waitMinutes * 60 * 1000);
@@ -471,15 +498,15 @@ export class DeliveryGroupsService {
 
     if (expired.length === 0) return;
 
-    const restaurantIds = [...new Set(expired.map((o) => o.restaurantId))];
-    const restaurants: { id: string; latitude: number; longitude: number }[] =
-      restaurantIds.length > 0
+    const shopIds2 = [...new Set(expired.map((o) => o.shopId))];
+    const shops2: { id: string; latitude: number; longitude: number }[] =
+      shopIds2.length > 0
         ? await this.dataSource.query(
-            `SELECT id, latitude, longitude FROM restaurants WHERE id = ANY($1)`,
-            [restaurantIds],
+            `SELECT id, latitude, longitude FROM shops WHERE id = ANY($1)`,
+            [shopIds2],
           )
         : [];
-    const restMap = new Map(restaurants.map((r) => [r.id, r]));
+    const restMap2 = new Map(shops2.map((r) => [r.id, r]));
 
     const assigned = new Set<string>();
     this.logger.log(
@@ -492,20 +519,20 @@ export class DeliveryGroupsService {
       const group: OrderEntity[] = [seed];
       assigned.add(seed.id);
 
-      // 1) Mismo restaurante
+      // 1) Mismo negocio
       for (const o of expired) {
-        if (assigned.has(o.id) || o.restaurantId !== seed.restaurantId)
+        if (assigned.has(o.id) || o.shopId !== seed.shopId)
           continue;
         group.push(o);
         assigned.add(o.id);
       }
 
-      // 2) Restaurantes cercanos (sin exigir cantidad mínima en timeout)
-      const seedRest = restMap.get(seed.restaurantId);
+      // 2) Negocios cercanos (sin exigir cantidad mínima en timeout)
+      const seedRest = restMap2.get(seed.shopId);
       if (seedRest) {
         for (const o of expired) {
           if (assigned.has(o.id)) continue;
-          const otherRest = restMap.get(o.restaurantId);
+          const otherRest = restMap2.get(o.shopId);
           if (!otherRest) continue;
           const dist = haversineMeters(
             Number(seedRest.latitude),
@@ -537,10 +564,10 @@ export class DeliveryGroupsService {
   private async enrichGroup(group: DeliveryGroupEntity) {
     const orders = await this.dataSource.query(
       `SELECT o.*,
-              r.name AS restaurant_name, r.address AS restaurant_address,
-              r.latitude AS restaurant_lat, r.longitude AS restaurant_lng
+              r.name AS shop_name, r.address AS shop_address,
+              r.latitude AS shop_lat, r.longitude AS shop_lng
        FROM orders o
-       JOIN restaurants r ON r.id = o.restaurant_id
+       JOIN shops r ON r.id = o.shop_id
        WHERE o.group_id = $1`,
       [group.id],
     );

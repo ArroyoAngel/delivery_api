@@ -3,7 +3,7 @@ import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 @Entity('menu_items')
 export class MenuItemEntity {
   @PrimaryGeneratedColumn('uuid') id: string;
-  @Column({ name: 'restaurant_id' }) restaurantId: string;
+  @Column({ name: 'shop_id' }) shopId: string;
   @Column({ name: 'category_id', nullable: true }) categoryId: string;
   @Column() name: string;
   @Column({ nullable: true }) description: string;

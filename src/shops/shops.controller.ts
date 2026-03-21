@@ -19,69 +19,72 @@ import {
   ApiBearerAuth,
   ApiParam,
 } from '@nestjs/swagger';
-import { RestaurantsService } from './restaurants.service';
-import { RestaurantStaffService } from './restaurant-staff.service';
-import { RestaurantScheduleService } from './restaurant-schedule.service';
+import { ShopsService } from './shops.service';
+import { ShopStaffService } from './shop-staff.service';
+import { ShopScheduleService } from './shop-schedule.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CasbinGuard } from '../authorization/guards/casbin.guard';
 
-@ApiTags('Restaurants')
-@Controller('restaurants')
-export class RestaurantsController {
+@ApiTags('Shops')
+@Controller('shops')
+export class ShopsController {
   constructor(
-    private readonly restaurants: RestaurantsService,
-    private readonly staff: RestaurantStaffService,
-    private readonly schedule: RestaurantScheduleService,
+    private readonly shops: ShopsService,
+    private readonly staff: ShopStaffService,
+    private readonly schedule: ShopScheduleService,
   ) {}
 
   // ── Categorías ────────────────────────────────────────────────────────────
 
   @Get('categories')
-  @ApiOperation({ summary: 'Categorías de restaurantes' })
-  categories() {
-    return this.restaurants.getCategories();
+  @ApiOperation({ summary: 'Categorías de negocios' })
+  @ApiQuery({ name: 'businessType', required: false, description: 'restaurant | supermarket | minimarket' })
+  categories(@Query('businessType') businessType?: string) {
+    return this.shops.getCategories(businessType);
   }
 
   // ── Listado / detalle ─────────────────────────────────────────────────────
 
   @Get()
-  @ApiOperation({ summary: 'Listar restaurantes' })
+  @ApiOperation({ summary: 'Listar negocios' })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'categoryId', required: false })
+  @ApiQuery({ name: 'businessType', required: false, description: 'restaurant | supermarket | minimarket' })
   findAll(
     @Query('search') search?: string,
     @Query('categoryId') categoryId?: string,
+    @Query('businessType') businessType?: string,
   ) {
-    return this.restaurants.findAll(search, categoryId);
+    return this.shops.findAll(search, categoryId, businessType);
   }
 
   @Get('mine')
   @UseGuards(JwtAuthGuard, CasbinGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Mi restaurante (admin)' })
+  @ApiOperation({ summary: 'Mi negocio (admin)' })
   findMine(@Request() req: any) {
-    return this.restaurants.findMine(req.user.id);
+    return this.shops.findMine(req.user.id);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Detalle de restaurante + menú' })
+  @ApiOperation({ summary: 'Detalle de negocio + menú' })
   findOne(@Param('id') id: string) {
-    return this.restaurants.findOne(id);
+    return this.shops.findOne(id);
   }
 
-  // ── Actualización del restaurante ─────────────────────────────────────────
+  // ── Actualización del negocio ─────────────────────────────────────────────
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard, CasbinGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Actualizar datos del restaurante' })
-  updateRestaurant(
+  @ApiOperation({ summary: 'Actualizar datos del negocio' })
+  updateShop(
     @Param('id') id: string,
     @Body() body: any,
     @Request() req: any,
   ) {
     const isSuperAdmin: boolean = req.user.roles?.includes('superadmin');
-    return this.restaurants.updateRestaurant(
+    return this.shops.updateShop(
       id,
       body,
       req.user.id,
@@ -96,7 +99,7 @@ export class RestaurantsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Crear una categoría de menú' })
   createMenuCategory(@Param('id') id: string, @Body() body: any) {
-    return this.restaurants.createMenuCategory(id, body);
+    return this.shops.createMenuCategory(id, body);
   }
 
   @Post(':id/menu')
@@ -104,7 +107,7 @@ export class RestaurantsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Registrar un producto en el menú' })
   createMenuItem(@Param('id') id: string, @Body() body: any) {
-    return this.restaurants.createMenuItem(id, body);
+    return this.shops.createMenuItem(id, body);
   }
 
   @Patch(':id/menu/:itemId')
@@ -118,15 +121,15 @@ export class RestaurantsController {
     @Param('itemId') itemId: string,
     @Body() body: any,
   ) {
-    return this.restaurants.updateMenuItem(id, itemId, body);
+    return this.shops.updateMenuItem(id, itemId, body);
   }
 
-  // ── Personal del restaurante ──────────────────────────────────────────────
+  // ── Personal del negocio ──────────────────────────────────────────────────
 
   @Get(':id/staff')
   @UseGuards(JwtAuthGuard, CasbinGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Listar personal del restaurante' })
+  @ApiOperation({ summary: 'Listar personal del negocio' })
   listStaff(@Param('id') id: string, @Request() req: any) {
     const isSuperAdmin = req.user.roles?.includes('superadmin');
     return this.staff.listStaff(id, req.user.id, isSuperAdmin);
@@ -136,7 +139,7 @@ export class RestaurantsController {
   @UseGuards(JwtAuthGuard, CasbinGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Registrar personal del restaurante',
+    summary: 'Registrar personal del negocio',
     description:
       'Crea una cuenta y perfil de staff. Los permisos otorgados deben ser un subconjunto de los permisos del admin solicitante.',
   })
@@ -172,7 +175,7 @@ export class RestaurantsController {
   @Delete(':id/staff/:staffId')
   @UseGuards(JwtAuthGuard, CasbinGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Remover un miembro del personal del restaurante' })
+  @ApiOperation({ summary: 'Remover un miembro del personal del negocio' })
   removeStaff(
     @Param('id') id: string,
     @Param('staffId') staffId: string,
@@ -185,7 +188,7 @@ export class RestaurantsController {
   // ── Horarios de atención ──────────────────────────────────────────────────
 
   @Get(':id/schedule')
-  @ApiOperation({ summary: 'Obtener horario semanal del restaurante' })
+  @ApiOperation({ summary: 'Obtener horario semanal del negocio' })
   getSchedule(@Param('id') id: string) {
     return this.schedule.getSchedule(id);
   }

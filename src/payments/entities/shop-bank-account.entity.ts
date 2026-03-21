@@ -6,10 +6,10 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-@Entity('restaurant_bank_accounts')
-export class RestaurantBankAccountEntity {
+@Entity('shop_bank_accounts')
+export class ShopBankAccountEntity {
   @PrimaryGeneratedColumn('uuid') id: string;
-  @Column({ name: 'restaurant_id', type: 'uuid' }) restaurantId: string;
+  @Column({ name: 'shop_id', type: 'uuid' }) shopId: string;
   @Column({ name: 'bank_name' }) bankName: string;
   @Column({ name: 'account_holder' }) accountHolder: string;
   @Column({ name: 'account_number' }) accountNumber: string;

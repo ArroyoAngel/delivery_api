@@ -5,8 +5,8 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-@Entity('restaurants')
-export class RestaurantEntity {
+@Entity('shops')
+export class ShopEntity {
   @PrimaryGeneratedColumn('uuid') id: string;
   @Column({ name: 'owner_account_id', nullable: true }) ownerAccountId: string;
   @Column() name: string;
@@ -42,5 +42,7 @@ export class RestaurantEntity {
   openingTime: string | null;
   @Column({ name: 'closing_time', type: 'time', nullable: true, default: null })
   closingTime: string | null;
+  @Column({ name: 'business_type', default: 'restaurant' }) businessType: string;
+  @Column({ name: 'zone_id', type: 'uuid', nullable: true }) zoneId: string | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
 }

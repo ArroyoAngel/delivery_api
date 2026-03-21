@@ -8,6 +8,7 @@ import { AuthModule } from '../auth/auth.module';
 import { DeliveryGroupsModule } from '../delivery-groups/delivery-groups.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
+import { CouponsModule } from '../coupons/coupons.module';
 
 @Module({
   imports: [
@@ -16,8 +17,10 @@ import { SystemConfigModule } from '../system-config/system-config.module';
     DeliveryGroupsModule,
     NotificationsModule,
     SystemConfigModule,
+    CouponsModule,
   ],
   controllers: [OrdersController, PaymentsController],
   providers: [OrdersService],
+  exports: [OrdersService],
 })
 export class OrdersModule {}

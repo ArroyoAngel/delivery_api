@@ -105,14 +105,36 @@ docker compose up -d api
 
 ---
 
-## Migraciones
+## Migraciones y Seeds
 
 Las migraciones corren **automaticamente** al iniciar el contenedor en produccion (`NODE_ENV=production`).
+
+### Comandos útiles
+
+```bash
+# Correr migraciones pendientes
+npm run migrations:run
+
+# Deshacer la última migración
+npm run migrations:revert
+
+# Correr seeds (reglas Casbin y datos iniciales)
+npm run seeds:run
+
+# Correr migraciones + seeds en un solo paso
+npm run setup
+
+# ⚠️  Resetear la DB completa y recargar todo desde cero
+npm run schema:drop
+npm run build
+npm run setup
+
+```
 
 Para crear una nueva migracion:
 
 ```bash
-npm run migration:generate -- database/migrations/NombreMigracion
+npm run migrations:generate -- database/migrations/NombreMigracion
 npm run build
 ```
 

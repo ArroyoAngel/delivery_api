@@ -5,7 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from './auth/auth.module';
-import { RestaurantsModule } from './restaurants/restaurants.module';
+import { ShopsModule } from './shops/shops.module';
 import { OrdersModule } from './orders/orders.module';
 import { AddressesModule } from './addresses/addresses.module';
 import { SystemConfigModule } from './system-config/system-config.module';
@@ -16,6 +16,11 @@ import { RolesModule } from './roles/roles.module';
 import { PaymentsModule } from './payments/payments.module';
 import { AuthorizationModule } from './authorization/authorization.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { TelegramModule } from './telegram/telegram.module';
+import { ZonesModule } from './zones/zones.module';
+import { SupportModule } from './support/support.module';
+import { CouponsModule } from './coupons/coupons.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuthZModule, AUTHZ_ENFORCER } from 'nest-authz';
 import TypeORMAdapter from 'typeorm-adapter';
 import { newEnforcer, newModel } from 'casbin';
@@ -46,6 +51,7 @@ m = r.sub == p.sub && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act) && p.e
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -83,7 +89,7 @@ m = r.sub == p.sub && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act) && p.e
     }),
     AuthorizationModule,
     AuthModule,
-    RestaurantsModule,
+    ShopsModule,
     OrdersModule,
     AddressesModule,
     SystemConfigModule,
@@ -93,6 +99,10 @@ m = r.sub == p.sub && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act) && p.e
     RolesModule,
     PaymentsModule,
     NotificationsModule,
+    TelegramModule,
+    ZonesModule,
+    SupportModule,
+    CouponsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -17,7 +17,7 @@ export class OrderItemDto {
 }
 
 export class CreateOrderDto {
-  @ApiProperty() @IsString() restaurantId: string;
+  @ApiProperty() @IsString() shopId: string;
   @ApiProperty({ type: [OrderItemDto] })
   @IsArray()
   @ValidateNested({ each: true })
@@ -40,10 +40,11 @@ export class CreateOrderDto {
   @IsNumber()
   deliveryLng?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() couponCode?: string;
 }
 
 export class ExpressRestaurantOrderDto {
-  @ApiProperty() @IsString() restaurantId: string;
+  @ApiProperty() @IsString() shopId: string;
   @ApiProperty({ type: [OrderItemDto] })
   @IsArray()
   @ValidateNested({ each: true })

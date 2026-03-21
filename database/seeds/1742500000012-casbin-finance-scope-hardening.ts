@@ -50,9 +50,9 @@ export class CasbinFinanceScopeHardening1742500000012 implements MigrationInterf
     }
 
     const adminMyFrontend = [
-      '/dashboard/my-restaurant/income',
-      '/dashboard/my-restaurant/bank-accounts',
-      '/dashboard/my-restaurant/withdrawals',
+      '/dashboard/my-shop/income',
+      '/dashboard/my-shop/bank-accounts',
+      '/dashboard/my-shop/withdrawals',
     ];
 
     for (const route of adminMyFrontend) {
@@ -112,9 +112,9 @@ export class CasbinFinanceScopeHardening1742500000012 implements MigrationInterf
     }
 
     const adminMyFrontend = [
-      '/dashboard/my-restaurant/income',
-      '/dashboard/my-restaurant/bank-accounts',
-      '/dashboard/my-restaurant/withdrawals',
+      '/dashboard/my-shop/income',
+      '/dashboard/my-shop/bank-accounts',
+      '/dashboard/my-shop/withdrawals',
     ];
 
     for (const route of adminMyFrontend) {

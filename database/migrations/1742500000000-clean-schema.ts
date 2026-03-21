@@ -86,12 +86,12 @@ export class CleanSchema1742500000000 implements MigrationInterface {
     `);
 
     // ── 6. admins ─────────────────────────────────────────────────────────
-    // Creado después de roles y antes de restaurants para permitir FKs
+    // Creado después de roles y antes de shops para permitir FKs
     await queryRunner.query(`
       CREATE TABLE admins (
         id                  UUID        NOT NULL DEFAULT gen_random_uuid(),
         profile_id          UUID        NOT NULL,
-        restaurant_id       UUID,
+        shop_id             UUID,
         parent_admin_id     UUID,
         granted_permissions TEXT[]      NOT NULL DEFAULT '{}',
         role_name           VARCHAR(100),
@@ -119,20 +119,21 @@ export class CleanSchema1742500000000 implements MigrationInterface {
       )
     `);
 
-    // ── 8. restaurant_categories ──────────────────────────────────────────
+    // ── 8. shop_categories ──────────────────────────────────────────
     await queryRunner.query(`
-      CREATE TABLE restaurant_categories (
-        id         UUID         NOT NULL DEFAULT gen_random_uuid(),
-        name       VARCHAR(100) NOT NULL,
-        icon       VARCHAR(100),
-        sort_order INT          NOT NULL DEFAULT 0,
-        CONSTRAINT PK_restaurant_categories PRIMARY KEY (id)
+      CREATE TABLE shop_categories (
+        id            UUID         NOT NULL DEFAULT gen_random_uuid(),
+        name          VARCHAR(100) NOT NULL,
+        icon          VARCHAR(100),
+        sort_order    INT          NOT NULL DEFAULT 0,
+        business_type VARCHAR(50)  NOT NULL DEFAULT 'restaurant',
+        CONSTRAINT PK_shop_categories PRIMARY KEY (id)
       )
     `);
 
-    // ── 9. restaurants ────────────────────────────────────────────────────
+    // ── 9. shops ────────────────────────────────────────────────────
     await queryRunner.query(`
-      CREATE TABLE restaurants (
+      CREATE TABLE shops (
         id                UUID          NOT NULL DEFAULT gen_random_uuid(),
         owner_account_id  UUID,
         name              VARCHAR(200)  NOT NULL,
@@ -149,43 +150,44 @@ export class CleanSchema1742500000000 implements MigrationInterface {
         is_open           BOOLEAN       NOT NULL DEFAULT true,
         opening_time      TIME,
         closing_time      TIME,
+        business_type     VARCHAR(50)   NOT NULL DEFAULT 'restaurant',
         created_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
-        CONSTRAINT PK_restaurants PRIMARY KEY (id),
-        CONSTRAINT FK_rest_owner  FOREIGN KEY (owner_account_id) REFERENCES accounts(id) ON DELETE SET NULL,
-        CONSTRAINT FK_rest_cat    FOREIGN KEY (category_id) REFERENCES restaurant_categories(id) ON DELETE SET NULL
+        CONSTRAINT PK_shops PRIMARY KEY (id),
+        CONSTRAINT FK_shop_owner  FOREIGN KEY (owner_account_id) REFERENCES accounts(id) ON DELETE SET NULL,
+        CONSTRAINT FK_shop_cat    FOREIGN KEY (category_id) REFERENCES shop_categories(id) ON DELETE SET NULL
       )
     `);
 
-    // FK de admins → restaurants (no se pudo antes porque restaurants no existía)
+    // FK de admins → shops (no se pudo antes porque shops no existía)
     await queryRunner.query(`
       ALTER TABLE admins
-        ADD CONSTRAINT FK_admins_rest FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
+        ADD CONSTRAINT FK_admins_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
     `);
 
-    // ── 10. restaurant_schedules ──────────────────────────────────────────
+    // ── 10. shop_schedules ──────────────────────────────────────────
     await queryRunner.query(`
-      CREATE TABLE restaurant_schedules (
-        id            UUID     NOT NULL DEFAULT gen_random_uuid(),
-        restaurant_id UUID     NOT NULL,
-        day_of_week   SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
-        open_time     TIME,
-        close_time    TIME,
-        is_closed     BOOLEAN  NOT NULL DEFAULT false,
-        CONSTRAINT PK_restaurant_schedules PRIMARY KEY (id),
-        CONSTRAINT UQ_sched_day UNIQUE (restaurant_id, day_of_week),
-        CONSTRAINT FK_sched_rest FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
+      CREATE TABLE shop_schedules (
+        id          UUID     NOT NULL DEFAULT gen_random_uuid(),
+        shop_id     UUID     NOT NULL,
+        day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+        open_time   TIME,
+        close_time  TIME,
+        is_closed   BOOLEAN  NOT NULL DEFAULT false,
+        CONSTRAINT PK_shop_schedules PRIMARY KEY (id),
+        CONSTRAINT UQ_sched_day UNIQUE (shop_id, day_of_week),
+        CONSTRAINT FK_sched_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
       )
     `);
 
     // ── 11. menu_categories ───────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE menu_categories (
-        id            UUID         NOT NULL DEFAULT gen_random_uuid(),
-        restaurant_id UUID         NOT NULL,
-        name          VARCHAR(100) NOT NULL,
-        sort_order    INT          NOT NULL DEFAULT 0,
+        id         UUID         NOT NULL DEFAULT gen_random_uuid(),
+        shop_id    UUID         NOT NULL,
+        name       VARCHAR(100) NOT NULL,
+        sort_order INT          NOT NULL DEFAULT 0,
         CONSTRAINT PK_menu_categories PRIMARY KEY (id),
-        CONSTRAINT FK_menucat_rest    FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
+        CONSTRAINT FK_menucat_shop    FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
       )
     `);
 
@@ -193,7 +195,7 @@ export class CleanSchema1742500000000 implements MigrationInterface {
     await queryRunner.query(`
       CREATE TABLE menu_items (
         id                   UUID          NOT NULL DEFAULT gen_random_uuid(),
-        restaurant_id        UUID          NOT NULL,
+        shop_id              UUID          NOT NULL,
         category_id          UUID,
         name                 VARCHAR(200)  NOT NULL,
         description          TEXT,
@@ -207,8 +209,8 @@ export class CleanSchema1742500000000 implements MigrationInterface {
         daily_sold           INTEGER       NOT NULL DEFAULT 0,
         created_at           TIMESTAMPTZ   NOT NULL DEFAULT now(),
         CONSTRAINT PK_menu_items PRIMARY KEY (id),
-        CONSTRAINT FK_item_rest  FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE,
-        CONSTRAINT FK_item_cat   FOREIGN KEY (category_id)   REFERENCES menu_categories(id) ON DELETE SET NULL
+        CONSTRAINT FK_item_shop  FOREIGN KEY (shop_id)      REFERENCES shops(id) ON DELETE CASCADE,
+        CONSTRAINT FK_item_cat   FOREIGN KEY (category_id)  REFERENCES menu_categories(id) ON DELETE SET NULL
       )
     `);
 
@@ -241,17 +243,18 @@ export class CleanSchema1742500000000 implements MigrationInterface {
       CREATE TABLE orders (
         id               UUID          NOT NULL DEFAULT gen_random_uuid(),
         client_id        UUID          NOT NULL,
-        restaurant_id    UUID          NOT NULL,
+        shop_id          UUID          NOT NULL,
         rider_id         UUID,
         status           VARCHAR(30)   NOT NULL DEFAULT 'pendiente',
         delivery_type    VARCHAR(20)   NOT NULL DEFAULT 'delivery',
         delivery_address TEXT,
         delivery_lat     DECIMAL(10,7),
         delivery_lng     DECIMAL(10,7),
-        subtotal         DECIMAL(10,2) NOT NULL DEFAULT 0,
-        total            DECIMAL(10,2) NOT NULL DEFAULT 0,
-        delivery_fee     DECIMAL(10,2) NOT NULL DEFAULT 0,
-        platform_fee     DECIMAL(10,2) NOT NULL DEFAULT 0,
+        subtotal          DECIMAL(10,2) NOT NULL DEFAULT 0,
+        total             DECIMAL(10,2) NOT NULL DEFAULT 0,
+        delivery_fee      DECIMAL(10,2) NOT NULL DEFAULT 0,
+        platform_fee      DECIMAL(10,2) NOT NULL DEFAULT 0,
+        commission_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
         payment_reference VARCHAR,
         notes            TEXT,
         group_id         UUID,
@@ -259,8 +262,8 @@ export class CleanSchema1742500000000 implements MigrationInterface {
         created_at       TIMESTAMPTZ   NOT NULL DEFAULT now(),
         updated_at       TIMESTAMPTZ   NOT NULL DEFAULT now(),
         CONSTRAINT PK_orders     PRIMARY KEY (id),
-        CONSTRAINT FK_ord_client FOREIGN KEY (client_id)     REFERENCES accounts(id)     ON DELETE RESTRICT,
-        CONSTRAINT FK_ord_rest   FOREIGN KEY (restaurant_id) REFERENCES restaurants(id)  ON DELETE RESTRICT,
+        CONSTRAINT FK_ord_client FOREIGN KEY (client_id) REFERENCES accounts(id) ON DELETE RESTRICT,
+        CONSTRAINT FK_ord_shop   FOREIGN KEY (shop_id)   REFERENCES shops(id)    ON DELETE RESTRICT,
         CONSTRAINT FK_ord_rider  FOREIGN KEY (rider_id)      REFERENCES riders(id)       ON DELETE SET NULL,
         CONSTRAINT FK_ord_group  FOREIGN KEY (group_id)      REFERENCES delivery_groups(id) ON DELETE SET NULL
       )
@@ -396,9 +399,9 @@ export class CleanSchema1742500000000 implements MigrationInterface {
 
     // ── 22. bank accounts ────────────────────────────────────────────────
     await queryRunner.query(`
-      CREATE TABLE restaurant_bank_accounts (
+      CREATE TABLE shop_bank_accounts (
         id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        restaurant_id  UUID NOT NULL,
+        shop_id        UUID NOT NULL,
         bank_name      VARCHAR NOT NULL,
         account_holder VARCHAR NOT NULL,
         account_number VARCHAR NOT NULL,
@@ -409,10 +412,10 @@ export class CleanSchema1742500000000 implements MigrationInterface {
         is_active      BOOLEAN NOT NULL DEFAULT TRUE,
         created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        CONSTRAINT fk_restaurant_bank_account_rest FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
+        CONSTRAINT fk_shop_bank_account_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
       )
     `);
-    await queryRunner.query(`CREATE INDEX idx_restaurant_bank_accounts_restaurant_id ON restaurant_bank_accounts(restaurant_id)`);
+    await queryRunner.query(`CREATE INDEX idx_shop_bank_accounts_shop_id ON shop_bank_accounts(shop_id)`);
 
     await queryRunner.query(`
       CREATE TABLE rider_bank_accounts (
@@ -450,7 +453,7 @@ export class CleanSchema1742500000000 implements MigrationInterface {
         CONSTRAINT fk_wallet_payment FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE SET NULL,
         CONSTRAINT fk_wallet_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL,
         CONSTRAINT fk_wallet_group FOREIGN KEY (group_id) REFERENCES delivery_groups(id) ON DELETE SET NULL,
-        CONSTRAINT chk_wallet_owner_type CHECK (owner_type IN ('restaurant','rider','platform')),
+        CONSTRAINT chk_wallet_owner_type CHECK (owner_type IN ('shop','rider','platform')),
         CONSTRAINT chk_wallet_entry_type CHECK (entry_type IN ('credit','debit','adjustment'))
       )
     `);
@@ -458,27 +461,27 @@ export class CleanSchema1742500000000 implements MigrationInterface {
 
     await queryRunner.query(`
       CREATE TABLE withdrawal_requests (
-        id                         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        owner_type                 VARCHAR(20) NOT NULL,
-        restaurant_id              UUID,
-        rider_id                   UUID,
-        amount                     DECIMAL(10,2) NOT NULL,
-        status                     VARCHAR(20) NOT NULL DEFAULT 'pending',
-        restaurant_bank_account_id UUID,
-        rider_bank_account_id      UUID,
-        external_transfer_id       VARCHAR,
-        notes                      TEXT,
-        requested_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        processed_at               TIMESTAMPTZ,
-        updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        CONSTRAINT fk_withdraw_rest FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE SET NULL,
+        id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        owner_type            VARCHAR(20) NOT NULL,
+        shop_id               UUID,
+        rider_id              UUID,
+        amount                DECIMAL(10,2) NOT NULL,
+        status                VARCHAR(20) NOT NULL DEFAULT 'pending',
+        shop_bank_account_id  UUID,
+        rider_bank_account_id UUID,
+        external_transfer_id  VARCHAR,
+        notes                 TEXT,
+        requested_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        processed_at          TIMESTAMPTZ,
+        updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT fk_withdraw_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE SET NULL,
         CONSTRAINT fk_withdraw_rider FOREIGN KEY (rider_id) REFERENCES riders(id) ON DELETE SET NULL,
-        CONSTRAINT fk_withdraw_rest_bank FOREIGN KEY (restaurant_bank_account_id) REFERENCES restaurant_bank_accounts(id) ON DELETE SET NULL,
+        CONSTRAINT fk_withdraw_shop_bank FOREIGN KEY (shop_bank_account_id) REFERENCES shop_bank_accounts(id) ON DELETE SET NULL,
         CONSTRAINT fk_withdraw_rider_bank FOREIGN KEY (rider_bank_account_id) REFERENCES rider_bank_accounts(id) ON DELETE SET NULL,
-        CONSTRAINT chk_withdraw_owner_type CHECK (owner_type IN ('restaurant','rider')),
+        CONSTRAINT chk_withdraw_owner_type CHECK (owner_type IN ('shop','rider')),
         CONSTRAINT chk_withdraw_owner_target CHECK (
-          (owner_type = 'restaurant' AND restaurant_id IS NOT NULL AND rider_id IS NULL)
-          OR (owner_type = 'rider' AND rider_id IS NOT NULL AND restaurant_id IS NULL)
+          (owner_type = 'shop' AND shop_id IS NOT NULL AND rider_id IS NULL)
+          OR (owner_type = 'rider' AND rider_id IS NOT NULL AND shop_id IS NULL)
         )
       )
     `);
@@ -493,57 +496,57 @@ export class CleanSchema1742500000000 implements MigrationInterface {
         rater_account_id     UUID NOT NULL,
         target_type          VARCHAR(20) NOT NULL,
         target_account_id    UUID,
-        target_restaurant_id UUID,
-        score                INT NOT NULL,
-        comment              TEXT,
-        created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        target_shop_id UUID,
+        score          INT NOT NULL,
+        comment        TEXT,
+        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         CONSTRAINT fk_ratings_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
         CONSTRAINT fk_ratings_group FOREIGN KEY (group_id) REFERENCES delivery_groups(id) ON DELETE CASCADE,
         CONSTRAINT fk_ratings_rater FOREIGN KEY (rater_account_id) REFERENCES accounts(id) ON DELETE CASCADE,
         CONSTRAINT fk_ratings_target_account FOREIGN KEY (target_account_id) REFERENCES accounts(id) ON DELETE CASCADE,
-        CONSTRAINT fk_ratings_target_restaurant FOREIGN KEY (target_restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE,
+        CONSTRAINT fk_ratings_target_shop FOREIGN KEY (target_shop_id) REFERENCES shops(id) ON DELETE CASCADE,
         CONSTRAINT chk_ratings_score CHECK (score BETWEEN 1 AND 5),
-        CONSTRAINT chk_ratings_target_type CHECK (target_type IN ('client','rider','restaurant')),
+        CONSTRAINT chk_ratings_target_type CHECK (target_type IN ('client','rider','shop')),
         CONSTRAINT chk_ratings_target CHECK (
-          (target_type = 'restaurant' AND target_restaurant_id IS NOT NULL AND target_account_id IS NULL)
+          (target_type = 'shop' AND target_shop_id IS NOT NULL AND target_account_id IS NULL)
           OR (target_type IN ('client','rider') AND target_account_id IS NOT NULL)
         )
       )
     `);
     await queryRunner.query(`CREATE INDEX idx_ratings_target_account ON ratings(target_type, target_account_id)`);
-    await queryRunner.query(`CREATE INDEX idx_ratings_target_restaurant ON ratings(target_type, target_restaurant_id)`);
+    await queryRunner.query(`CREATE INDEX idx_ratings_target_shop ON ratings(target_type, target_shop_id)`);
     await queryRunner.query(`CREATE INDEX idx_ratings_order ON ratings(order_id)`);
 
-    // ── 25. restaurant_service_areas ─────────────────────────────────────
+    // ── 25. shop_service_areas ─────────────────────────────────────
     await queryRunner.query(`
-      CREATE TABLE restaurant_service_areas (
-        id UUID NOT NULL DEFAULT gen_random_uuid(),
-        restaurant_id UUID NOT NULL,
-        name VARCHAR(120) NOT NULL,
-        kind VARCHAR(20) NOT NULL DEFAULT 'mesa',
-        color VARCHAR(20) NOT NULL DEFAULT '#f97316',
+      CREATE TABLE shop_service_areas (
+        id         UUID NOT NULL DEFAULT gen_random_uuid(),
+        shop_id    UUID NOT NULL,
+        name       VARCHAR(120) NOT NULL,
+        kind       VARCHAR(20) NOT NULL DEFAULT 'mesa',
+        color      VARCHAR(20) NOT NULL DEFAULT '#f97316',
         sort_order INT NOT NULL DEFAULT 1,
-        is_active BOOLEAN NOT NULL DEFAULT true,
+        is_active  BOOLEAN NOT NULL DEFAULT true,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        CONSTRAINT PK_restaurant_service_areas PRIMARY KEY (id),
-        CONSTRAINT FK_rsa_restaurant FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
+        CONSTRAINT PK_shop_service_areas PRIMARY KEY (id),
+        CONSTRAINT FK_ssa_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
       )
     `);
     await queryRunner.query(`
-      CREATE INDEX idx_rsa_restaurant_sort
-      ON restaurant_service_areas (restaurant_id, sort_order)
+      CREATE INDEX idx_ssa_shop_sort
+      ON shop_service_areas (shop_id, sort_order)
     `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX IF EXISTS idx_rsa_restaurant_sort`);
-    await queryRunner.query(`DROP TABLE IF EXISTS restaurant_service_areas`);
+    await queryRunner.query(`DROP INDEX IF EXISTS idx_ssa_shop_sort`);
+    await queryRunner.query(`DROP TABLE IF EXISTS shop_service_areas`);
     await queryRunner.query(`DROP TABLE IF EXISTS ratings`);
     await queryRunner.query(`DROP TABLE IF EXISTS withdrawal_requests`);
     await queryRunner.query(`DROP TABLE IF EXISTS wallet_transactions`);
     await queryRunner.query(`DROP TABLE IF EXISTS rider_bank_accounts`);
-    await queryRunner.query(`DROP TABLE IF EXISTS restaurant_bank_accounts`);
+    await queryRunner.query(`DROP TABLE IF EXISTS shop_bank_accounts`);
     await queryRunner.query(`DROP TABLE IF EXISTS payments`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_notifications_user_unread`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_notifications_user_id`);
@@ -559,10 +562,10 @@ export class CleanSchema1742500000000 implements MigrationInterface {
     await queryRunner.query(`DROP TABLE IF EXISTS system_config`);
     await queryRunner.query(`DROP TABLE IF EXISTS menu_items`);
     await queryRunner.query(`DROP TABLE IF EXISTS menu_categories`);
-    await queryRunner.query(`DROP TABLE IF EXISTS restaurant_schedules`);
-    await queryRunner.query(`ALTER TABLE admins DROP CONSTRAINT IF EXISTS FK_admins_rest`);
-    await queryRunner.query(`DROP TABLE IF EXISTS restaurants`);
-    await queryRunner.query(`DROP TABLE IF EXISTS restaurant_categories`);
+    await queryRunner.query(`DROP TABLE IF EXISTS shop_schedules`);
+    await queryRunner.query(`ALTER TABLE admins DROP CONSTRAINT IF EXISTS FK_admins_shop`);
+    await queryRunner.query(`DROP TABLE IF EXISTS shops`);
+    await queryRunner.query(`DROP TABLE IF EXISTS shop_categories`);
     await queryRunner.query(`DROP TABLE IF EXISTS casbin_rule`);
     await queryRunner.query(`DROP TABLE IF EXISTS admins`);
     await queryRunner.query(`DROP TABLE IF EXISTS roles`);

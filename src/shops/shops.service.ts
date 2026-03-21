@@ -5,22 +5,23 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, ILike } from 'typeorm';
-import { RestaurantEntity } from './entities/restaurant.entity';
-import { RestaurantStaffPermission } from './restaurant-staff-permission.enum';
+import { ShopEntity } from './entities/shop.entity';
+import { ShopStaffPermission } from './shop-staff-permission.enum';
 
 @Injectable()
-export class RestaurantsService {
+export class ShopsService {
   constructor(
-    @InjectRepository(RestaurantEntity)
-    private restaurants: Repository<RestaurantEntity>,
+    @InjectRepository(ShopEntity)
+    private shops: Repository<ShopEntity>,
     private dataSource: DataSource,
   ) {}
 
-  async findAll(search?: string, categoryId?: string) {
+  async findAll(search?: string, categoryId?: string, businessType?: string) {
     const where: any = { isOpen: true };
     if (search) where.name = ILike(`%${search}%`);
     if (categoryId) where.categoryId = categoryId;
-    const list = await this.restaurants.find({
+    if (businessType) where.businessType = businessType;
+    const list = await this.shops.find({
       where,
       order: { rating: 'DESC' },
     });
@@ -28,53 +29,53 @@ export class RestaurantsService {
   }
 
   /**
-   * Devuelve el restaurante del requester junto con su menú.
+   * Devuelve el negocio del requester junto con su menú.
    * Funciona para:
-   *   - Dueño del restaurante (restaurants.owner_account_id = accountId)
-   *   - Staff asignado       (admins.restaurant_id → restaurante)
+   *   - Dueño del negocio (shops.owner_account_id = accountId)
+   *   - Staff asignado       (admins.shop_id → negocio)
    */
   async findMine(accountId: string) {
     // 1. Intentar como dueño
-    let restaurant = await this.restaurants.findOne({
+    let shop = await this.shops.findOne({
       where: { ownerAccountId: accountId },
     });
 
     // 2. Intentar como staff asignado
-    if (!restaurant) {
+    if (!shop) {
       const [row] = await this.dataSource.query(
-        `SELECT a.restaurant_id
+        `SELECT a.shop_id
          FROM admins a
          JOIN profiles p ON p.id = a.profile_id
          WHERE p.account_id = $1
-           AND a.restaurant_id IS NOT NULL
+           AND a.shop_id IS NOT NULL
          LIMIT 1`,
         [accountId],
       );
-      if (row?.restaurant_id) {
-        restaurant = await this.restaurants.findOne({
-          where: { id: row.restaurant_id },
+      if (row?.shop_id) {
+        shop = await this.shops.findOne({
+          where: { id: row.shop_id },
         });
       }
     }
 
-    if (!restaurant)
-      throw new NotFoundException('No tenés un restaurante asignado');
-    return this.attachMenu(restaurant);
+    if (!shop)
+      throw new NotFoundException('No tenés un negocio asignado');
+    return this.attachMenu(shop);
   }
 
   async findOne(id: string) {
-    const restaurant = await this.restaurants.findOne({ where: { id } });
-    if (!restaurant) throw new NotFoundException('Restaurante no encontrado');
-    return this.attachMenu(restaurant);
+    const shop = await this.shops.findOne({ where: { id } });
+    if (!shop) throw new NotFoundException('Negocio no encontrado');
+    return this.attachMenu(shop);
   }
 
   /**
-   * Actualiza datos del restaurante.
-   * - superadmin: puede actualizar cualquier restaurante (isSuperAdmin = true).
-   * - admin: solo su propio restaurante (verifica owner_account_id).
-   * - restaurant_staff: solo su restaurante y debe tener MANAGE_RESTAURANT.
+   * Actualiza datos del negocio.
+   * - superadmin: puede actualizar cualquier negocio (isSuperAdmin = true).
+   * - admin: solo su propio negocio (verifica owner_account_id).
+   * - shop_staff: solo su negocio y debe tener MANAGE_SHOP.
    */
-  async updateRestaurant(
+  async updateShop(
     id: string,
     dto: Partial<{
       name: string;
@@ -90,23 +91,23 @@ export class RestaurantsService {
     requesterAccountId?: string,
     isSuperAdmin?: boolean,
   ) {
-    const restaurant = await this.restaurants.findOne({ where: { id } });
-    if (!restaurant) throw new NotFoundException('Restaurante no encontrado');
+    const shop = await this.shops.findOne({ where: { id } });
+    if (!shop) throw new NotFoundException('Negocio no encontrado');
 
     if (!isSuperAdmin && requesterAccountId) {
-      await this.assertRestaurantAccess(
+      await this.assertShopAccess(
         id,
         requesterAccountId,
-        RestaurantStaffPermission.MANAGE_RESTAURANT,
+        ShopStaffPermission.MANAGE_SHOP,
       );
     }
 
-    Object.assign(restaurant, dto);
-    return this.restaurants.save(restaurant);
+    Object.assign(shop, dto);
+    return this.shops.save(shop);
   }
 
   async updateMenuItem(
-    restaurantId: string,
+    shopId: string,
     itemId: string,
     dto: Partial<{
       name: string;
@@ -118,8 +119,8 @@ export class RestaurantsService {
     }>,
   ) {
     const [item] = await this.dataSource.query(
-      'SELECT * FROM menu_items WHERE id = $1 AND restaurant_id = $2',
-      [itemId, restaurantId],
+      'SELECT * FROM menu_items WHERE id = $1 AND shop_id = $2',
+      [itemId, shopId],
     );
     if (!item) throw new NotFoundException('Item no encontrado');
     const fields: string[] = [];
@@ -161,24 +162,24 @@ export class RestaurantsService {
   }
 
   async createMenuCategory(
-    restaurantId: string,
+    shopId: string,
     dto: { name: string; sortOrder?: number },
   ) {
-    const restaurant = await this.restaurants.findOne({
-      where: { id: restaurantId },
+    const shop = await this.shops.findOne({
+      where: { id: shopId },
     });
-    if (!restaurant) throw new NotFoundException('Restaurante no encontrado');
+    if (!shop) throw new NotFoundException('Negocio no encontrado');
     const [row] = await this.dataSource.query(
-      `INSERT INTO menu_categories (restaurant_id, name, sort_order)
-       VALUES ($1, $2, COALESCE($3, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM menu_categories WHERE restaurant_id = $1)))
+      `INSERT INTO menu_categories (shop_id, name, sort_order)
+       VALUES ($1, $2, COALESCE($3, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM menu_categories WHERE shop_id = $1)))
        RETURNING id, name, sort_order AS "sortOrder"`,
-      [restaurantId, dto.name, dto.sortOrder ?? null],
+      [shopId, dto.name, dto.sortOrder ?? null],
     );
     return row;
   }
 
   async createMenuItem(
-    restaurantId: string,
+    shopId: string,
     dto: {
       categoryId: string;
       name: string;
@@ -191,19 +192,19 @@ export class RestaurantsService {
       size?: number;
     },
   ) {
-    const restaurant = await this.restaurants.findOne({
-      where: { id: restaurantId },
+    const shop = await this.shops.findOne({
+      where: { id: shopId },
     });
-    if (!restaurant) throw new NotFoundException('Restaurante no encontrado');
+    if (!shop) throw new NotFoundException('Negocio no encontrado');
     const [row] = await this.dataSource.query(
       `INSERT INTO menu_items
-         (restaurant_id, category_id, name, description, price, image_url, is_available, stock, daily_limit, daily_sold, size)
+         (shop_id, category_id, name, description, price, image_url, is_available, stock, daily_limit, daily_sold, size)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10)
        RETURNING id, name, description, price, image_url AS "imageUrl",
                  is_available AS "isAvailable", stock, daily_limit AS "dailyLimit",
                  daily_sold AS "dailySold", category_id AS "categoryId", size`,
       [
-        restaurantId,
+        shopId,
         dto.categoryId,
         dto.name,
         dto.description ?? '',
@@ -218,15 +219,21 @@ export class RestaurantsService {
     return row;
   }
 
-  async getCategories() {
+  async getCategories(businessType?: string) {
+    if (businessType) {
+      return this.dataSource.query(
+        'SELECT * FROM shop_categories WHERE business_type = $1 ORDER BY sort_order',
+        [businessType],
+      );
+    }
     return this.dataSource.query(
-      'SELECT * FROM restaurant_categories ORDER BY sort_order',
+      'SELECT * FROM shop_categories ORDER BY business_type, sort_order',
     );
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
 
-  private async attachMenu(restaurant: RestaurantEntity) {
+  private async attachMenu(shop: ShopEntity) {
     const menuCategories = await this.dataSource.query(
       `SELECT mc.id, mc.name, mc.sort_order AS "sortOrder",
           json_agg(
@@ -240,12 +247,12 @@ export class RestaurantsService {
           ) FILTER (WHERE mi.id IS NOT NULL) AS items
        FROM menu_categories mc
        LEFT JOIN menu_items mi ON mi.category_id = mc.id
-       WHERE mc.restaurant_id = $1
+       WHERE mc.shop_id = $1
        GROUP BY mc.id ORDER BY mc.sort_order`,
-      [restaurant.id],
+      [shop.id],
     );
     return {
-      ...restaurant,
+      ...shop,
       menuCategories: menuCategories.map((c: any) => ({
         ...c,
         items: c.items ?? [],
@@ -254,16 +261,16 @@ export class RestaurantsService {
   }
 
   /**
-   * Verifica que el requester sea dueño del restaurante O sea staff con el permiso indicado.
+   * Verifica que el requester sea dueño del negocio O sea staff con el permiso indicado.
    */
-  private async assertRestaurantAccess(
-    restaurantId: string,
+  private async assertShopAccess(
+    shopId: string,
     accountId: string,
-    permission: RestaurantStaffPermission,
+    permission: ShopStaffPermission,
   ) {
     const [isOwner] = await this.dataSource.query(
-      'SELECT 1 FROM restaurants WHERE id = $1 AND owner_account_id = $2',
-      [restaurantId, accountId],
+      'SELECT 1 FROM shops WHERE id = $1 AND owner_account_id = $2',
+      [shopId, accountId],
     );
     if (isOwner) return;
 
@@ -271,14 +278,14 @@ export class RestaurantsService {
       `SELECT 1
        FROM admins a
        JOIN profiles p ON p.id = a.profile_id
-       WHERE a.restaurant_id = $1
+       WHERE a.shop_id = $1
          AND p.account_id   = $2
          AND $3 = ANY(a.granted_permissions)`,
-      [restaurantId, accountId, permission],
+      [shopId, accountId, permission],
     );
     if (!isStaff) {
       throw new ForbiddenException(
-        `No tenés acceso o el permiso "${permission}" en este restaurante`,
+        `No tenés acceso o el permiso "${permission}" en este negocio`,
       );
     }
   }

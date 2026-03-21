@@ -16,6 +16,8 @@ import {
 import { DeliveryGroupsService } from '../delivery-groups/delivery-groups.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SystemConfigService } from '../system-config/system-config.service';
+import { CouponsService } from '../coupons/coupons.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class OrdersService {
@@ -25,6 +27,8 @@ export class OrdersService {
     private deliveryGroups: DeliveryGroupsService,
     private notifications: NotificationsService,
     private cfg: SystemConfigService,
+    private coupons: CouponsService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   private readonly effectiveStatuses = [
@@ -40,22 +44,22 @@ export class OrdersService {
     return `${prefix}_${id.replace(/-/g, '').toUpperCase()}`;
   }
 
-  private async resolveRestaurantForAccount(
+  private async resolveShopForAccount(
     accountId: string,
   ): Promise<{ id: string; name: string }> {
-    let [restaurant] = await this.dataSource.query(
+    let [shop] = await this.dataSource.query(
       `SELECT id, name
-       FROM restaurants
+       FROM shops
        WHERE owner_account_id = $1
        LIMIT 1`,
       [accountId],
     );
 
-    if (!restaurant) {
-      [restaurant] = await this.dataSource.query(
+    if (!shop) {
+      [shop] = await this.dataSource.query(
         `SELECT r.id, r.name
-         FROM restaurants r
-         JOIN admins a ON a.restaurant_id = r.id
+         FROM shops r
+         JOIN admins a ON a.shop_id = r.id
          JOIN profiles p ON p.id = a.profile_id
          WHERE p.account_id = $1
          LIMIT 1`,
@@ -63,15 +67,15 @@ export class OrdersService {
       );
     }
 
-    if (!restaurant)
-      throw new NotFoundException('No tenés un restaurante asignado');
-    return restaurant;
+    if (!shop)
+      throw new NotFoundException('No tenés un negocio asignado');
+    return shop;
   }
 
-  private async ensureDefaultServiceAreas(restaurantId: string): Promise<void> {
+  private async ensureDefaultServiceAreas(shopId: string): Promise<void> {
     const [existing] = await this.dataSource.query(
-      `SELECT 1 FROM restaurant_service_areas WHERE restaurant_id = $1 LIMIT 1`,
-      [restaurantId],
+      `SELECT 1 FROM shop_service_areas WHERE shop_id = $1 LIMIT 1`,
+      [shopId],
     );
     if (existing) return;
 
@@ -84,16 +88,24 @@ export class OrdersService {
 
     for (const [name, kind, color, sortOrder] of defaults) {
       await this.dataSource.query(
-        `INSERT INTO restaurant_service_areas (restaurant_id, name, kind, color, sort_order)
+        `INSERT INTO shop_service_areas (shop_id, name, kind, color, sort_order)
          VALUES ($1, $2, $3, $4, $5)`,
-        [restaurantId, name, kind, color, sortOrder],
+        [shopId, name, kind, color, sortOrder],
       );
     }
   }
 
   private async getPlatformServiceFee(): Promise<number> {
-    const fee = await this.cfg.getNumber('platform_service_fee', 0);
+    const fee = await this.cfg.getNumber('app_service_fee', 1);
     return Number.isFinite(fee) && fee > 0 ? fee : 0;
+  }
+
+  private async getPlatformDeliveryFees(): Promise<{ delivery: number; express: number }> {
+    const [delivery, express] = await Promise.all([
+      this.cfg.getNumber('delivery_fee', 5),
+      this.cfg.getNumber('express_fee', 5),
+    ]);
+    return { delivery, express };
   }
 
   private async createPendingPayment(params: {
@@ -149,11 +161,11 @@ export class OrdersService {
            WHERE oi.order_id = $1`,
           [o.id],
         );
-        const [restaurant] = await this.dataSource.query(
-          'SELECT name FROM restaurants WHERE id = $1',
-          [o.restaurantId],
+        const [shop] = await this.dataSource.query(
+          'SELECT name FROM shops WHERE id = $1',
+          [o.shopId],
         );
-        return { ...o, items, restaurantName: restaurant?.name ?? '' };
+        return { ...o, items, shopName: shop?.name ?? '' };
       }),
     );
   }
@@ -168,23 +180,23 @@ export class OrdersService {
     const order = await this.orders.findOne({ where });
     if (!order) throw new NotFoundException('Orden no encontrada');
 
-    // Admin/staff que no sea superadmin: verificar que la orden pertenezca a su restaurante
+    // Admin/staff que no sea superadmin: verificar que la orden pertenezca a su negocio
     const isSuperAdmin = roles.some((r) =>
       ['superadmin', 'super_admin'].includes(r),
     );
     if (isElevated && !isSuperAdmin) {
       const [hasAccess] = await this.dataSource.query(
-        `SELECT 1 FROM restaurants r
+        `SELECT 1 FROM shops r
          WHERE r.id = $1
            AND (
              r.owner_account_id = $2
              OR EXISTS (
                SELECT 1 FROM admins a
                JOIN profiles p ON p.id = a.profile_id
-               WHERE p.account_id = $2 AND a.restaurant_id = r.id
+               WHERE p.account_id = $2 AND a.shop_id = r.id
              )
            )`,
-        [order.restaurantId, userId],
+        [order.shopId, userId],
       );
       if (!hasAccess)
         throw new ForbiddenException('No tenés acceso a esta orden');
@@ -196,20 +208,21 @@ export class OrdersService {
        WHERE oi.order_id = $1`,
       [orderId],
     );
-    const [restaurant] = await this.dataSource.query(
-      'SELECT name, address FROM restaurants WHERE id = $1',
-      [order.restaurantId],
+    const [shop] = await this.dataSource.query(
+      'SELECT name, address FROM shops WHERE id = $1',
+      [order.shopId],
     );
     return {
       ...order,
       items,
-      restaurantName: restaurant?.name ?? '',
-      restaurantAddress: restaurant?.address ?? '',
+      shopName: shop?.name ?? '',
+      shopAddress: shop?.address ?? '',
     };
   }
 
   async create(userId: string, dto: CreateOrderDto) {
     const platformFee = await this.getPlatformServiceFee();
+    const platformDeliveryFees = await this.getPlatformDeliveryFees();
     const saved = await this.dataSource.transaction(async (em) => {
       let subtotal = 0;
       const validatedItems: {
@@ -254,17 +267,37 @@ export class OrdersService {
         });
       }
 
-      const restaurants = await em.query(
-        'SELECT delivery_fee FROM restaurants WHERE id = $1',
-        [dto.restaurantId],
+      const shops = await em.query(
+        'SELECT id FROM shops WHERE id = $1',
+        [dto.shopId],
       );
-      if (!restaurants.length)
-        throw new NotFoundException('Restaurante no encontrado');
+      if (!shops.length)
+        throw new NotFoundException('Negocio no encontrado');
       const deliveryType = dto.deliveryType ?? 'delivery';
-      const baseFee =
-        deliveryType === 'recogida' ? 0 : Number(restaurants[0].delivery_fee);
-      const deliveryFee = deliveryType === 'express' ? baseFee * 2 : baseFee;
-      const total = subtotal + deliveryFee;
+      const deliveryFee =
+        deliveryType === 'recogida' ? 0
+        : deliveryType === 'express' ? platformDeliveryFees.express
+        : platformDeliveryFees.delivery;
+
+      // ── Cupón ──────────────────────────────────────────────────────────────
+      let couponDiscount = 0;
+      let couponCode: string | undefined;
+      let couponAbsorbs: string | undefined;
+      if (dto.couponCode) {
+        const result = await this.coupons.validate(
+          dto.couponCode,
+          subtotal,
+          deliveryFee,
+          dto.shopId,
+        );
+        couponDiscount = result.discountAmount;
+        couponCode = result.code;
+        couponAbsorbs = result.absorbsCost;
+        // Incrementar uso dentro de la misma transacción
+        await this.coupons.incrementUsesInEm(em, result.code);
+      }
+
+      const total = subtotal + deliveryFee + platformFee - couponDiscount;
 
       // Si es delivery y no se envió dirección, usar la dirección principal del cliente
       let deliveryAddress = dto.deliveryAddress ?? undefined;
@@ -295,7 +328,7 @@ export class OrdersService {
 
       const order = em.create(OrderEntity, {
         clientId: userId,
-        restaurantId: dto.restaurantId,
+        shopId: dto.shopId,
         status: 'pendiente',
         deliveryType,
         deliveryAddress,
@@ -303,8 +336,11 @@ export class OrdersService {
         deliveryLng,
         subtotal,
         deliveryFee,
-        platformFee: deliveryType === 'delivery' ? platformFee : 0,
+        platformFee: deliveryType !== 'recogida' ? platformFee : 0,
         total,
+        couponCode,
+        couponDiscount,
+        couponAbsorbs,
         orderSize,
         notes: dto.notes,
       });
@@ -348,8 +384,8 @@ export class OrdersService {
         payerAccountId: userId,
         subtotal: Number(saved.subtotal ?? 0),
         deliveryFee: Number(saved.deliveryFee ?? 0),
-        platformFee,
-        totalAmount: Number(saved.total ?? 0) + platformFee,
+        platformFee: Number(saved.platformFee ?? 0),
+        totalAmount: Number(saved.total ?? 0),
         metadata: { deliveryType: 'express', orderIds: [saved.id] },
       });
       return { ...saved, groupId: group.id, paymentReference };
@@ -365,8 +401,8 @@ export class OrdersService {
         payerAccountId: userId,
         subtotal: Number(saved.subtotal ?? 0),
         deliveryFee: Number(saved.deliveryFee ?? 0),
-        platformFee,
-        totalAmount: Number(saved.total ?? 0) + platformFee,
+        platformFee: Number(saved.platformFee ?? 0),
+        totalAmount: Number(saved.total ?? 0),
         metadata: { deliveryType: 'delivery' },
       });
       return { ...saved, paymentReference, platformFee };
@@ -375,27 +411,27 @@ export class OrdersService {
     return saved;
   }
 
-  async findRestaurantOrders(ownerId: string) {
-    // Busca el restaurante: primero como dueño, luego como staff asignado
-    let [restaurant] = await this.dataSource.query(
-      'SELECT id, name FROM restaurants WHERE owner_account_id = $1',
+  async findShopOrders(ownerId: string) {
+    // Busca el negocio: primero como dueño, luego como staff asignado
+    let [shop] = await this.dataSource.query(
+      'SELECT id, name FROM shops WHERE owner_account_id = $1',
       [ownerId],
     );
-    if (!restaurant) {
-      [restaurant] = await this.dataSource.query(
-        `SELECT r.id, r.name FROM restaurants r
-         JOIN admins a ON a.restaurant_id = r.id
+    if (!shop) {
+      [shop] = await this.dataSource.query(
+        `SELECT r.id, r.name FROM shops r
+         JOIN admins a ON a.shop_id = r.id
          JOIN profiles p ON p.id = a.profile_id
          WHERE p.account_id = $1
          LIMIT 1`,
         [ownerId],
       );
     }
-    if (!restaurant)
-      throw new NotFoundException('No tenés un restaurante asignado');
+    if (!shop)
+      throw new NotFoundException('No tenés un negocio asignado');
 
     const rows = await this.orders.find({
-      where: { restaurantId: restaurant.id },
+      where: { shopId: shop.id },
       order: { createdAt: 'DESC' },
     });
 
@@ -424,52 +460,52 @@ export class OrdersService {
       }),
     );
 
-    return { restaurant: restaurant.name, orders };
+    return { shop: shop.name, orders };
   }
 
-  async getRestaurantServiceAreas(accountId: string) {
-    const restaurant = await this.resolveRestaurantForAccount(accountId);
-    await this.ensureDefaultServiceAreas(restaurant.id);
+  async getShopServiceAreas(accountId: string) {
+    const shop = await this.resolveShopForAccount(accountId);
+    await this.ensureDefaultServiceAreas(shop.id);
 
     return this.dataSource.query(
-      `SELECT id, restaurant_id AS "restaurantId", name, kind, color, sort_order AS "sortOrder", is_active AS "isActive"
-       FROM restaurant_service_areas
-       WHERE restaurant_id = $1
+      `SELECT id, shop_id AS "shopId", name, kind, color, sort_order AS "sortOrder", is_active AS "isActive"
+       FROM shop_service_areas
+       WHERE shop_id = $1
        ORDER BY sort_order, created_at`,
-      [restaurant.id],
+      [shop.id],
     );
   }
 
-  async createRestaurantServiceArea(
+  async createShopServiceArea(
     accountId: string,
     dto: CreateRestaurantServiceAreaDto,
   ) {
-    const restaurant = await this.resolveRestaurantForAccount(accountId);
+    const shop = await this.resolveShopForAccount(accountId);
 
     const [row] = await this.dataSource.query(
-      `INSERT INTO restaurant_service_areas (restaurant_id, name, kind, color, sort_order)
+      `INSERT INTO shop_service_areas (shop_id, name, kind, color, sort_order)
        VALUES (
          $1,
          $2,
          COALESCE($3, 'mesa'),
          COALESCE($4, '#f97316'),
-         (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM restaurant_service_areas WHERE restaurant_id = $1)
+         (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM shop_service_areas WHERE shop_id = $1)
        )
-       RETURNING id, restaurant_id AS "restaurantId", name, kind, color, sort_order AS "sortOrder", is_active AS "isActive"`,
-      [restaurant.id, dto.name, dto.kind ?? null, dto.color ?? null],
+       RETURNING id, shop_id AS "shopId", name, kind, color, sort_order AS "sortOrder", is_active AS "isActive"`,
+      [shop.id, dto.name, dto.kind ?? null, dto.color ?? null],
     );
 
     return row;
   }
 
-  async createRestaurantLocalCashOrder(
+  async createShopLocalCashOrder(
     accountId: string,
     dto: CreateRestaurantLocalOrderDto,
   ) {
     if (!dto.items?.length)
       throw new BadRequestException('Debes incluir al menos un item');
 
-    const restaurant = await this.resolveRestaurantForAccount(accountId);
+    const shop = await this.resolveShopForAccount(accountId);
 
     const saved = await this.dataSource.transaction(async (em) => {
       let subtotal = 0;
@@ -485,12 +521,12 @@ export class OrdersService {
         const rows = await em.query(
           `SELECT id, price, is_available, COALESCE(size, 1) AS size, stock, daily_limit, daily_sold
            FROM menu_items
-           WHERE id = $1 AND restaurant_id = $2`,
-          [item.menuItemId, restaurant.id],
+           WHERE id = $1 AND shop_id = $2`,
+          [item.menuItemId, shop.id],
         );
         if (!rows.length)
           throw new NotFoundException(
-            `Item ${item.menuItemId} no encontrado en tu restaurante`,
+            `Item ${item.menuItemId} no encontrado en tu negocio`,
           );
 
         const mi = rows[0];
@@ -536,7 +572,7 @@ export class OrdersService {
 
       const order = em.create(OrderEntity, {
         clientId: accountId,
-        restaurantId: restaurant.id,
+        shopId: shop.id,
         status: 'confirmado',
         deliveryType: 'recogida',
         deliveryAddress: isPickup
@@ -595,7 +631,7 @@ export class OrdersService {
           accountId,
           subtotal,
           JSON.stringify({
-            channel: 'restaurant_local_cash',
+            channel: 'shop_local_cash',
             serviceType,
             areaId: dto.areaId ?? null,
             areaLabel: areaText,
@@ -609,12 +645,12 @@ export class OrdersService {
     });
 
     this.notifications
-      .notifyRestaurantNewOrder(saved.restaurantId, saved.id)
+      .notifyShopNewOrder(saved.shopId, saved.id)
       .catch(() => null);
 
     return {
       ...saved,
-      workflow: 'restaurant_local_cash',
+      workflow: 'shop_local_cash',
       effectiveStatuses: this.effectiveStatuses,
     };
   }
@@ -668,18 +704,18 @@ export class OrdersService {
           });
         }
 
-        const restaurants = await em.query(
-          'SELECT delivery_fee FROM restaurants WHERE id = $1',
-          [restaurantOrder.restaurantId],
+        const shops = await em.query(
+          'SELECT delivery_fee FROM shops WHERE id = $1',
+          [restaurantOrder.shopId],
         );
-        if (!restaurants.length)
-          throw new NotFoundException('Restaurante no encontrado');
-        const deliveryFee = Number(restaurants[0].delivery_fee) * 2; // express = ×2
+        if (!shops.length)
+          throw new NotFoundException('Negocio no encontrado');
+        const deliveryFee = Number(shops[0].delivery_fee) * 2; // express = ×2
         const total = subtotal + deliveryFee;
 
         const order = em.create(OrderEntity, {
           clientId: userId,
-          restaurantId: restaurantOrder.restaurantId,
+          shopId: restaurantOrder.shopId,
           status: 'pendiente',
           deliveryType: 'express',
           deliveryAddress: dto.deliveryAddress,
@@ -762,7 +798,7 @@ export class OrdersService {
     if (!orders.length)
       throw new NotFoundException('Grupo no encontrado o sin órdenes');
     const [paymentRow] = await this.dataSource.query(
-      `SELECT id, total_amount FROM payments WHERE group_id = $1 ORDER BY requested_at DESC LIMIT 1`,
+      `SELECT id, subtotal, delivery_fee, platform_fee, total_amount FROM payments WHERE group_id = $1 ORDER BY requested_at DESC LIMIT 1`,
       [groupId],
     );
     const groupTotal = paymentRow
@@ -779,7 +815,7 @@ export class OrdersService {
     for (const o of unpaid) {
       await this.orders.update(o.id, { status: 'confirmado' });
       this.notifications
-        .notifyRestaurantNewOrder(o.restaurantId, o.id)
+        .notifyShopNewOrder(o.shopId, o.id)
         .catch(() => null);
     }
     await this.dataSource.query(
@@ -796,6 +832,31 @@ export class OrdersService {
         JSON.stringify({ reference, ...(metadata ?? {}) }),
       ],
     );
+
+    // Distribuir fondos por cada orden del grupo
+    if (paymentRow) {
+      const orderCount = orders.length || 1;
+      // Prorratear subtotal y fees entre las órdenes del grupo
+      for (const o of orders) {
+        const orderSubtotal = Number(o.subtotal);
+        const orderDeliveryFee = Number(o.deliveryFee);
+        const orderPlatformFee = Number(o.platformFee);
+        const perOrderPayment = {
+          ...paymentRow,
+          subtotal: orderSubtotal || Number(paymentRow.subtotal) / orderCount,
+          delivery_fee: orderDeliveryFee || Number(paymentRow.delivery_fee) / orderCount,
+          platform_fee: orderPlatformFee || Number(paymentRow.platform_fee) / orderCount,
+        };
+        await this._distributePayment(o.id, o.shopId, perOrderPayment);
+      }
+    }
+
+    this.eventEmitter.emit('payment.confirmed', {
+      groupId,
+      clientId: orders[0]?.clientId,
+      total: groupTotal,
+    });
+
     return {
       groupId,
       status: 'confirmado',
@@ -859,7 +920,8 @@ export class OrdersService {
       );
     }
     const [paymentRow] = await this.dataSource.query(
-      `SELECT total_amount FROM payments WHERE order_id = $1 ORDER BY requested_at DESC LIMIT 1`,
+      `SELECT id, subtotal, delivery_fee, platform_fee, total_amount
+       FROM payments WHERE order_id = $1 ORDER BY requested_at DESC LIMIT 1`,
       [orderId],
     );
     const targetTotal = paymentRow
@@ -872,7 +934,7 @@ export class OrdersService {
     }
     await this.orders.update(orderId, { status: 'confirmado' });
     this.notifications
-      .notifyRestaurantNewOrder(order.restaurantId, orderId)
+      .notifyShopNewOrder(order.shopId, orderId)
       .catch(() => null);
     await this.dataSource.query(
       `UPDATE payments
@@ -888,12 +950,103 @@ export class OrdersService {
         JSON.stringify({ reference, ...(metadata ?? {}) }),
       ],
     );
+    // ── Distribución de fondos ──────────────────────────────────────────────
+    await this._distributePayment(orderId, order.shopId, paymentRow);
+
+    this.eventEmitter.emit('payment.confirmed', {
+      orderId,
+      clientId: order.clientId,
+      total: targetTotal,
+    });
+
     return {
       id: orderId,
       status: 'confirmado',
       paidAt: new Date().toISOString(),
       total: targetTotal,
     };
+  }
+
+  /**
+   * Crea los registros de wallet_transactions para distribuir el pago entre
+   * restaurante, plataforma y (pendiente) repartidor.
+   *
+   * Estructura:
+   *   subtotal  → restaurante (menos comisión)
+   *   platform_fee (cargo de servicio + comisión sobre subtotal) → plataforma
+   *   delivery_fee → plataforma con status 'pending_rider'
+   *                  (se transferirá al repartidor al entregar)
+   */
+  private async _distributePayment(
+    orderId: string,
+    shopId: string,
+    payment: any,
+  ): Promise<void> {
+    if (!payment) return;
+
+    const commissionPct = await this.cfg.getNumber('shop_commission_pct', 0);
+    const subtotal = Number(payment.subtotal ?? 0);
+    const deliveryFee = Number(payment.delivery_fee ?? 0);
+    const platformFeeBase = Number(payment.platform_fee ?? 0);
+    const paymentId = payment.id;
+
+    // Recuperar datos del cupón de la orden para ajustar distribución
+    const [orderRow] = await this.dataSource.query(
+      `SELECT coupon_discount, coupon_absorbs FROM orders WHERE id = $1`,
+      [orderId],
+    );
+    const couponDiscount = Number(orderRow?.coupon_discount ?? 0);
+    const couponAbsorbs = orderRow?.coupon_absorbs ?? null;
+
+    const commission = subtotal * commissionPct / 100;
+    // Si el negocio absorbe el cupón, se descuenta de su crédito
+    const shopCouponDeduction = couponAbsorbs === 'shop' ? couponDiscount : 0;
+    const restaurantAmount = Math.max(0, subtotal - commission - shopCouponDeduction);
+    const platformAmount = platformFeeBase + commission;
+
+    // Persistir commission_amount en la orden para historial
+    await this.dataSource.query(
+      `UPDATE orders SET commission_amount = $1 WHERE id = $2`,
+      [commission, orderId],
+    );
+
+    // ── Negocio ─────────────────────────────────────────────────────────
+    if (restaurantAmount > 0) {
+      await this.dataSource.query(
+        `INSERT INTO wallet_transactions
+           (owner_type, owner_id, payment_id, order_id, entry_type, amount, status, description)
+         VALUES ('shop', $1, $2, $3, 'credit', $4, 'confirmed',
+                 'Venta confirmada')`,
+        [shopId, paymentId, orderId, restaurantAmount],
+      );
+    }
+
+    // ── Plataforma (cargo de servicio + comisión) ────────────────────────────
+    const [superadmin] = await this.dataSource.query(
+      `SELECT id FROM accounts WHERE 'superadmin' = ANY(roles) LIMIT 1`,
+    );
+    const platformOwnerId = superadmin?.id ?? '00000000-0000-0000-0000-000000000000';
+
+    if (platformAmount > 0) {
+      await this.dataSource.query(
+        `INSERT INTO wallet_transactions
+           (owner_type, owner_id, payment_id, order_id, entry_type, amount, status, description)
+         VALUES ('platform', $1, $2, $3, 'credit', $4, 'confirmed',
+                 'Cargo de servicio')`,
+        [platformOwnerId, paymentId, orderId, platformAmount],
+      );
+    }
+
+    // ── Delivery (pendiente de asignación a repartidor) ──────────────────────
+    if (deliveryFee > 0) {
+      await this.dataSource.query(
+        `INSERT INTO wallet_transactions
+           (owner_type, owner_id, payment_id, order_id, entry_type, amount, status, description)
+         VALUES ('platform', $1, $2, $3, 'credit', $4, 'pending_rider',
+                 'Fee de delivery — pendiente de repartidor')`,
+        [platformOwnerId, paymentId, orderId, deliveryFee],
+      );
+    }
   }
 
   async confirmPaymentByReference(
@@ -942,10 +1095,10 @@ export class OrdersService {
     const rows = await this.dataSource.query(`
       SELECT
         o.*,
-        r.name AS restaurant_name,
+        r.name AS shop_name,
         p.first_name, p.last_name
       FROM orders o
-      LEFT JOIN restaurants r ON r.id = o.restaurant_id
+      LEFT JOIN shops r ON r.id = o.shop_id
       LEFT JOIN accounts a ON a.id = o.client_id
       LEFT JOIN profiles p ON p.account_id = a.id
       ORDER BY o.created_at DESC
@@ -961,8 +1114,8 @@ export class OrdersService {
         return {
           id: o.id,
           clientId: o.client_id,
-          restaurantId: o.restaurant_id,
-          restaurantName: o.restaurant_name ?? '',
+          shopId: o.shop_id,
+          shopName: o.shop_name ?? '',
           clientName: `${o.first_name ?? ''} ${o.last_name ?? ''}`.trim(),
           status: o.status,
           subtotal: Number(o.subtotal ?? 0),

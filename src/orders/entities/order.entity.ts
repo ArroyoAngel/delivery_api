@@ -10,7 +10,7 @@ import {
 export class OrderEntity {
   @PrimaryGeneratedColumn('uuid') id: string;
   @Column({ name: 'client_id' }) clientId: string;
-  @Column({ name: 'restaurant_id' }) restaurantId: string;
+  @Column({ name: 'shop_id' }) shopId: string;
   @Column({ name: 'rider_id', nullable: true }) riderId: string;
   @Column({ default: 'pendiente' }) status: string;
   @Column({ name: 'delivery_type', default: 'delivery' }) deliveryType: string;
@@ -55,7 +55,19 @@ export class OrderEntity {
   paymentReference: string;
   @Column({ nullable: true }) notes: string;
   @Column({ name: 'group_id', nullable: true }) groupId: string;
+  @Column({
+    name: 'commission_amount',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  commissionAmount: number;
   @Column({ name: 'order_size', type: 'int', default: 0 }) orderSize: number;
+  @Column({ name: 'coupon_code', nullable: true }) couponCode: string;
+  @Column({ name: 'coupon_discount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  couponDiscount: number;
+  @Column({ name: 'coupon_absorbs', nullable: true }) couponAbsorbs: string;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
   @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;
 }
