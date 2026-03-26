@@ -192,13 +192,18 @@ export class CreditsService {
 
     const purchase = await this.purchases.findOne({ where: { id: purchaseId, riderId } });
     if (!purchase) throw new NotFoundException('Compra no encontrada');
-    if (purchase.status !== 'pending') {
-      throw new ConflictException('Solo se puede enviar comprobante de compras pendientes');
+    if (purchase.status !== 'pending' && purchase.status !== 'rejected') {
+      throw new ConflictException('Solo se puede enviar comprobante de compras pendientes o rechazadas');
     }
 
     const baseUrl = (process.env.API_BASE_URL ?? 'http://localhost:3002/api').replace('/api', '');
     const proofImageUrl = `${baseUrl}/uploads/${file.filename}`;
-    await this.purchases.update(purchaseId, { proofImageUrl });
+    await this.purchases.update(purchaseId, {
+      proofImageUrl,
+      status: 'pending',
+      rejectionReason: null,
+      cancelledAt: null,
+    });
     return { proofImageUrl };
   }
 
@@ -248,13 +253,30 @@ export class CreditsService {
     }
   }
 
+  // ── Rechazo (admin) ───────────────────────────────────────────────────────
+
+  async rejectPurchase(reference: string, reason?: string) {
+    const purchase = await this.purchases.findOne({ where: { paymentReference: reference } });
+    if (!purchase) throw new NotFoundException('Compra no encontrada');
+    if (purchase.status !== 'pending') {
+      throw new ConflictException('Solo se pueden rechazar compras pendientes');
+    }
+    await this.purchases.update(purchase.id, {
+      status: 'rejected',
+      cancelledAt: new Date(),
+      rejectionReason: reason ?? null,
+    });
+    this.events.emitCreditRejected(purchase.id, reason);
+    return { message: 'Compra rechazada' };
+  }
+
   // ── Confirmación (admin o polling automático) ─────────────────────────────
 
   async confirmCreditPurchase(reference: string, fromPolling = false) {
     const purchase = await this.purchases.findOne({ where: { paymentReference: reference } });
     if (!purchase) throw new NotFoundException('Compra no encontrada');
     if (purchase.status === 'confirmed') return { message: 'Ya confirmado' };
-    if (purchase.status === 'cancelled') throw new ConflictException('Compra cancelada');
+    if (purchase.status === 'cancelled' || purchase.status === 'rejected') throw new ConflictException('Compra cancelada o rechazada');
 
     await this.purchases.update(purchase.id, { status: 'confirmed' });
 
@@ -292,7 +314,7 @@ export class CreditsService {
 
     return this.dataSource.query(
       `SELECT cp.id, cp.payment_reference, cp.credits_granted, cp.amount_paid,
-              cp.status, cp.bnb_qr_image, cp.proof_image_url, cp.created_at,
+              cp.status, cp.bnb_qr_image, cp.proof_image_url, cp.rejection_reason, cp.created_at,
               pkg.name AS package_name
        FROM credit_purchases cp
        JOIN credit_packages pkg ON pkg.id = cp.package_id

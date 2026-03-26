@@ -137,6 +137,15 @@ export class CreditsController {
     return this.service.confirmCreditPurchase(reference);
   }
 
+  @Post('admin/reject/:reference')
+  @ApiOperation({ summary: 'Rechazar compra de créditos (superadmin)' })
+  reject(
+    @Param('reference') reference: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.service.rejectPurchase(reference, body?.reason);
+  }
+
   @Get('admin/purchases')
   @ApiOperation({ summary: 'Todas las compras de créditos (superadmin)' })
   allPurchases() {

@@ -44,6 +44,7 @@ export class ShopEntity {
   closingTime: string | null;
   @Column({ name: 'business_type', default: 'restaurant' }) businessType: string;
   @Column({ name: 'zone_id', type: 'uuid', nullable: true }) zoneId: string | null;
+  @Column({ name: 'qr_image_url', type: 'text', nullable: true }) qrImageUrl: string | null;
   @Column({ default: 'active' }) status: string; // 'active' | 'disabled'
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
 }

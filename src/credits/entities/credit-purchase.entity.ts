@@ -12,6 +12,7 @@ export class CreditPurchaseEntity {
   @Column({ name: 'bnb_qr_id', type: 'varchar', length: 128, nullable: true }) bnbQrId: string | null;
   @Column({ name: 'bnb_qr_image', type: 'text', nullable: true }) bnbQrImage: string | null;
   @Column({ name: 'proof_image_url', type: 'text', nullable: true }) proofImageUrl: string | null;
+  @Column({ name: 'rejection_reason', type: 'text', nullable: true }) rejectionReason: string | null;
   @Column({ name: 'cancelled_at', type: 'timestamptz', nullable: true }) cancelledAt: Date | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
 }

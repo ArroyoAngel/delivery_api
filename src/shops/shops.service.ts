@@ -77,6 +77,22 @@ export class ShopsService {
    * - admin: solo su propio negocio (verifica owner_account_id).
    * - shop_staff: solo su negocio y debe tener MANAGE_SHOP.
    */
+  async uploadQrImage(
+    id: string,
+    url: string,
+    requesterAccountId?: string,
+    isSuperAdmin?: boolean,
+  ) {
+    const shop = await this.shops.findOne({ where: { id } });
+    if (!shop) throw new NotFoundException('Negocio no encontrado');
+    if (!isSuperAdmin && requesterAccountId) {
+      await this.assertShopAccess(id, requesterAccountId, ShopStaffPermission.MANAGE_SHOP);
+    }
+    shop.qrImageUrl = url;
+    await this.shops.save(shop);
+    return { url };
+  }
+
   async updateShop(
     id: string,
     dto: Partial<{
@@ -90,6 +106,7 @@ export class ShopsService {
       openingTime: string;
       closingTime: string;
       status: string;
+      qrImageUrl: string;
     }>,
     requesterAccountId?: string,
     isSuperAdmin?: boolean,

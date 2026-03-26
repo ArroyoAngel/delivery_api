@@ -11,14 +11,24 @@ import {
   UseGuards,
   Request,
   ParseIntPipe,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 import {
   ApiOperation,
   ApiQuery,
   ApiTags,
   ApiBearerAuth,
   ApiParam,
+  ApiConsumes,
 } from '@nestjs/swagger';
+
+const uploadDir = join(process.cwd(), 'uploads');
+if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
 import { ShopsService } from './shops.service';
 import { ShopStaffService } from './shop-staff.service';
 import { ShopScheduleService } from './shop-schedule.service';
@@ -90,6 +100,39 @@ export class ShopsController {
       req.user.id,
       isSuperAdmin,
     );
+  }
+
+  // ── QR de pago ────────────────────────────────────────────────────────────
+
+  @Post(':id/upload-qr')
+  @UseGuards(JwtAuthGuard, CasbinGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Subir imagen QR de pago del negocio' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: uploadDir,
+        filename: (_req, file, cb) => {
+          const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+          cb(null, `${unique}${extname(file.originalname)}`);
+        },
+      }),
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        cb(null, /\.(jpg|jpeg|png|webp|gif)$/i.test(file.originalname));
+      },
+    }),
+  )
+  uploadQr(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req: any,
+  ) {
+    const baseUrl = process.env.API_BASE_URL?.replace('/api', '') ?? 'http://localhost:3002';
+    const url = `${baseUrl}/uploads/${file.filename}`;
+    const isSuperAdmin: boolean = req.user.roles?.includes('superadmin');
+    return this.shops.uploadQrImage(id, url, req.user.id, isSuperAdmin);
   }
 
   // ── Menú ──────────────────────────────────────────────────────────────────

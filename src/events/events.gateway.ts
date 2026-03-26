@@ -19,9 +19,11 @@ export class EventsGateway {
   }
 
   emitCreditConfirmed(purchaseId: string, balance: number) {
-    // Evento específico para el sheet que está esperando (por purchaseId)
     this.server.emit(`credit:confirmed:${purchaseId}`, { balance });
-    // Evento genérico para que AppRoot refresque el balance del rider
     this.server.emit('credit:confirmed', { balance });
+  }
+
+  emitCreditRejected(purchaseId: string, reason?: string) {
+    this.server.emit(`credit:rejected:${purchaseId}`, { reason: reason ?? null });
   }
 }
