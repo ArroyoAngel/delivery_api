@@ -73,6 +73,11 @@ const DEFAULTS: { key: string; value: string; description: string }[] = [
     description: 'Número de cuenta BNB de la plataforma (actualizar con tu número real).',
   },
   {
+    key: 'platform_qr_image_url',
+    value: '',
+    description: 'URL de la imagen del QR estático del banco para cobros de créditos. Si está vacío se genera un QR con los datos de la cuenta.',
+  },
+  {
     key: 'support_enabled',
     value: 'true',
     description: 'Habilitar soporte humano vía Telegram. Si es false, el bot indica que no hay soporte disponible.',
@@ -86,6 +91,16 @@ const DEFAULTS: { key: string; value: string; description: string }[] = [
     key: 'support_hours_end',
     value: '20:00',
     description: 'Hora de fin de atención al cliente (formato HH:MM, hora local Bolivia).',
+  },
+  {
+    key: 'allow_inactive_shop_login',
+    value: 'false',
+    description: 'Si es true, los administradores de negocios deshabilitados pueden iniciar sesión para consultar su información. Para los clientes, ese negocio sigue inactivo.',
+  },
+  {
+    key: 'max_bag_size',
+    value: '10',
+    description: 'Capacidad máxima de la bolsa del repartidor. Cada producto tiene un tamaño (1, 2, 3, 5 o 10). La suma de tamaños del carrito no puede superar este límite.',
   },
 ];
 

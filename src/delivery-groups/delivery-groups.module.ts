@@ -7,6 +7,7 @@ import { DeliveryGroupsController } from './delivery-groups.controller';
 import { AuthModule } from '../auth/auth.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { EventsModule } from '../events/events.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AuthModule,
     SystemConfigModule,
     NotificationsModule,
+    EventsModule,
   ],
   controllers: [DeliveryGroupsController],
   providers: [DeliveryGroupsService],

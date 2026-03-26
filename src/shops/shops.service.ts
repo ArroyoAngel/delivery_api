@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, ILike } from 'typeorm';
 import { ShopEntity } from './entities/shop.entity';
 import { ShopStaffPermission } from './shop-staff-permission.enum';
+import { EventsGateway } from '../events/events.gateway';
 
 @Injectable()
 export class ShopsService {
@@ -14,6 +15,7 @@ export class ShopsService {
     @InjectRepository(ShopEntity)
     private shops: Repository<ShopEntity>,
     private dataSource: DataSource,
+    private events: EventsGateway,
   ) {}
 
   async findAll(search?: string, categoryId?: string, businessType?: string) {
@@ -87,6 +89,7 @@ export class ShopsService {
       isOpen: boolean;
       openingTime: string;
       closingTime: string;
+      status: string;
     }>,
     requesterAccountId?: string,
     isSuperAdmin?: boolean,
@@ -102,8 +105,13 @@ export class ShopsService {
       );
     }
 
+    const prevStatus = shop.status;
     Object.assign(shop, dto);
-    return this.shops.save(shop);
+    const saved = await this.shops.save(shop);
+    if (dto.status && dto.status !== prevStatus) {
+      this.events.emitShopStatusChanged(saved.id, saved.status);
+    }
+    return saved;
   }
 
   async updateMenuItem(

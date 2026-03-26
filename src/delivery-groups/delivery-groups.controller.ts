@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Param,
   Query,
   Body,
@@ -85,6 +86,18 @@ export class DeliveryGroupsController {
     return this.service.getRiderDeliveries(id, date);
   }
 
+  @Get('stats/today')
+  @ApiOperation({ summary: 'Estadísticas del rider para el día de hoy' })
+  statsToday(@Request() req: any) {
+    return this.service.getTodayStats(req.user.id);
+  }
+
+  @Patch('available')
+  @ApiOperation({ summary: 'Rider se pone online/offline' })
+  setAvailable(@Request() req: any, @Body() body: { available: boolean }) {
+    return this.service.setAvailable(req.user.id, body.available);
+  }
+
   @Get('groups/available')
   @ApiOperation({ summary: 'Grupos de pedidos disponibles para aceptar' })
   available() {
@@ -116,5 +129,28 @@ export class DeliveryGroupsController {
   @ApiOperation({ summary: 'Marcar un pedido como entregado' })
   markDelivered(@Request() req, @Param('orderId') orderId: string) {
     return this.service.markOrderDelivered(req.user.id, orderId);
+  }
+
+  // ── Créditos del rider ────────────────────────────────────────────────────
+
+  @Get(':id/credits')
+  @ApiOperation({ summary: 'Ver saldo de créditos de un rider (admin)' })
+  getRiderCredits(@Param('id') id: string) {
+    return this.service.getRiderCredits(id);
+  }
+
+  @Get('credits/me')
+  @ApiOperation({ summary: 'Ver mi saldo de créditos (rider)' })
+  myCredits(@Request() req: any) {
+    return this.service.getMyCredits(req.user.id);
+  }
+
+  @Patch(':id/credits')
+  @ApiOperation({ summary: 'Agregar o ajustar créditos de un rider (admin)' })
+  adjustCredits(
+    @Param('id') id: string,
+    @Body() body: { amount: number; reason?: string },
+  ) {
+    return this.service.adjustRiderCredits(id, body.amount, body.reason);
   }
 }

@@ -8,6 +8,7 @@ import { ShopEntity } from './entities/shop.entity';
 import { MenuItemEntity } from './entities/menu-item.entity';
 import { ShopScheduleEntity } from './entities/shop-schedule.entity';
 import { AuthModule } from '../auth/auth.module';
+import { EventsModule } from '../events/events.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { AuthModule } from '../auth/auth.module';
       ShopScheduleEntity,
     ]),
     AuthModule,
+    EventsModule,
   ],
   controllers: [ShopsController],
   providers: [

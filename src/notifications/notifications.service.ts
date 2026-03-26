@@ -185,6 +185,22 @@ export class NotificationsService implements OnModuleInit {
     await this.sendToUser(clientId, n, { type: 'order_status', status });
   }
 
+  /** Notifica al cliente que su pedido fue cancelado por el repartidor */
+  async notifyClientOrderCancelled(
+    clientId: string,
+    reason: string,
+    shopName = '',
+  ) {
+    const n = {
+      title: '❌ Pedido cancelado',
+      body: reason
+        ? `Tu pedido de ${shopName || 'YaYa Eats'} fue cancelado: ${reason}`
+        : `Tu pedido de ${shopName || 'YaYa Eats'} fue cancelado por el repartidor.`,
+    };
+    await this._saveForUsers([clientId], n, 'order_cancelled', { reason });
+    await this.sendToUser(clientId, n, { type: 'order_cancelled', reason });
+  }
+
   /** Notifica a todos los riders disponibles que hay un grupo listo */
   async notifyRidersGroupAvailable(groupId: string, orderCount: number) {
     const notification = {

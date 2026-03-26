@@ -17,7 +17,10 @@
     { "key": "payment_reference", "value": "", "type": "string" },
     { "key": "withdrawal_id",     "value": "", "type": "string" },
     { "key": "bank_account_id",   "value": "", "type": "string" },
-    { "key": "webhook_secret",    "value": "webhook_secret_dev_2024", "type": "string" }
+    { "key": "webhook_secret",       "value": "webhook_secret_dev_2024", "type": "string" },
+    { "key": "credit_package_id",    "value": "", "type": "string" },
+    { "key": "credit_purchase_id",   "value": "", "type": "string" },
+    { "key": "credit_reference",     "value": "", "type": "string" }
   ],
   "item": [
 
@@ -561,6 +564,139 @@
             }
           }
         }
+      ]
+    },
+
+    {
+      "name": "Credits — Paquetes y Compras",
+      "item": [
+
+        {
+          "name": "Listar paquetes activos (rider / SA)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/credits/packages"
+          }
+        },
+        {
+          "name": "Listar TODOS los paquetes (SA, incluye inactivos)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/credits/packages?all=true",
+              "query": [{ "key": "all", "value": "true" }]
+            }
+          }
+        },
+        {
+          "name": "Crear paquete (SA)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "if (j.id) { pm.collectionVariables.set('credit_package_id', j.id); console.log('Package ID guardado:', j.id); }"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/credits/packages",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pack Básico\",\n  \"credits\": 10,\n  \"bonusCredits\": 0,\n  \"price\": 50,\n  \"sortOrder\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Actualizar paquete (SA)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/credits/packages/{{credit_package_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bonusCredits\": 2,\n  \"isActive\": true,\n  \"sortOrder\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Regenerar QR de todos los paquetes (SA)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/credits/admin/refresh-qr"
+          }
+        },
+
+        {
+          "name": "Mi saldo (rider)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/credits/my-balance"
+          }
+        },
+        {
+          "name": "Mi historial de compras (rider)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/credits/my-history"
+          }
+        },
+        {
+          "name": "Iniciar compra — genera QR BNB (rider)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const j = pm.response.json();",
+            "if (j.purchaseId) { pm.collectionVariables.set('credit_purchase_id', j.purchaseId); console.log('Purchase ID guardado:', j.purchaseId); }",
+            "if (j.reference)  { pm.collectionVariables.set('credit_reference', j.reference);   console.log('Referencia guardada:', j.reference); }"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/credits/packages/{{credit_package_id}}/claim",
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        },
+        {
+          "name": "Cancelar compra pendiente (rider)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/credits/purchases/{{credit_purchase_id}}"
+          }
+        },
+
+        {
+          "name": "Confirmar pago manualmente (SA)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/credits/admin/confirm/{{credit_reference}}"
+          }
+        },
+        {
+          "name": "Todas las compras (SA)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/credits/admin/purchases"
+          }
+        },
+        {
+          "name": "Saldos de todos los riders (SA)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/credits/admin/rider-balances"
+          }
+        }
+
       ]
     },
 

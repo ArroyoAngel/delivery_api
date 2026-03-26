@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
+import { CreditsService } from '../credits/credits.service';
 
 /**
  * Endpoints llamados por el banco (BNB/BCB) como webhooks de pago.
@@ -16,7 +17,10 @@ import { OrdersService } from './orders.service';
 @ApiTags('Payments')
 @Controller('payments')
 export class PaymentsController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly credits: CreditsService,
+  ) {}
 
   private checkSecret(secret: string): void {
     const expected =
@@ -27,7 +31,7 @@ export class PaymentsController {
 
   @Post('confirm')
   @ApiOperation({
-    summary: 'Confirmar pago por referencia unificada (orden o grupo)',
+    summary: 'Confirmar pago por referencia unificada (orden, grupo o créditos)',
   })
   confirmByReference(
     @Headers('x-payment-secret') secret: string,
@@ -42,6 +46,12 @@ export class PaymentsController {
     this.checkSecret(secret);
     if (!body?.reference)
       throw new BadRequestException('reference es requerido');
+
+    // Referencias CRED_ → compra de créditos de rider
+    if (body.reference.startsWith('CRED_')) {
+      return this.credits.confirmCreditPurchase(body.reference);
+    }
+
     return this.orders.confirmPaymentByReference(
       body.reference,
       body?.paidAmount,

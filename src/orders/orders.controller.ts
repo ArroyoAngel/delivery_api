@@ -72,9 +72,20 @@ export class OrdersController {
   }
 
   @Post(':id/cancel')
-  @ApiOperation({ summary: 'Cancelar pedido' })
+  @ApiOperation({ summary: 'Cancelar pedido (cliente)' })
   cancel(@Request() req, @Param('id') id: string) {
     return this.orders.cancelOrder(req.user.id, id);
+  }
+
+  @Post(':id/rider-cancel')
+  @UseGuards(CasbinGuard)
+  @ApiOperation({ summary: 'Rider cancela un pedido con motivo' })
+  riderCancel(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.orders.riderCancelOrder(req.user.id, id, body.reason ?? '');
   }
 
   @Put(':id/status')

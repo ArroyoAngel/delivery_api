@@ -41,6 +41,10 @@ export class CreateOrderDto {
   deliveryLng?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() couponCode?: string;
+  @ApiProperty({ required: false, enum: ['qr', 'cash'], default: 'qr' })
+  @IsOptional()
+  @IsEnum(['qr', 'cash'])
+  paymentMethod?: 'qr' | 'cash';
 }
 
 export class ExpressRestaurantOrderDto {
@@ -71,6 +75,10 @@ export class ExpressCheckoutDto {
   @IsOptional()
   @IsNumber()
   deliveryLng?: number;
+  @ApiProperty({ required: false, enum: ['qr', 'cash'], default: 'qr' })
+  @IsOptional()
+  @IsEnum(['qr', 'cash'])
+  paymentMethod?: 'qr' | 'cash';
 }
 
 export class CreateRestaurantLocalOrderDto {

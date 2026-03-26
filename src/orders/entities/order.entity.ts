@@ -68,6 +68,9 @@ export class OrderEntity {
   @Column({ name: 'coupon_discount', type: 'decimal', precision: 10, scale: 2, default: 0 })
   couponDiscount: number;
   @Column({ name: 'coupon_absorbs', nullable: true }) couponAbsorbs: string;
+  @Column({ name: 'rider_instructions', nullable: true }) riderInstructions: string;
+  @Column({ name: 'payment_method', default: 'qr' }) paymentMethod: string; // 'qr' | 'cash'
+  @Column({ name: 'cancel_reason', type: 'varchar', length: 500, nullable: true }) cancelReason: string | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
   @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;
 }

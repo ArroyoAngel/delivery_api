@@ -57,10 +57,10 @@ export class Shops1742500000003 implements MigrationInterface {
       await queryRunner.query(
         `INSERT INTO shops
            (id, owner_account_id, name, description, address, latitude, longitude,
-            category_id, delivery_fee, delivery_time_min, business_type)
-         SELECT $1, a.id, $3, $4, $5, $6, $7, $8, $9, $10, 'restaurant'
+            category_id, delivery_fee, delivery_time_min, business_type, status)
+         SELECT $1, a.id, $3, $4, $5, $6, $7, $8, $9, $10, 'restaurant', 'active'
            FROM accounts a WHERE a.email = $2
-         ON CONFLICT (id) DO NOTHING`,
+         ON CONFLICT (id) DO UPDATE SET status = COALESCE(shops.status, 'active')`,
         [r.id, r.owner, r.name, r.desc, r.address, r.lat, r.lng, r.cat, r.fee, r.time],
       );
     }

@@ -140,6 +140,30 @@ export class AuthService {
     ) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
+
+    // Bloquear login si el shop del usuario está deshabilitado
+    const shopRoles = ['admin', 'cashier', 'staff'];
+    if (account.roles.some((r) => shopRoles.includes(r))) {
+      const [shop] = await this.dataSource.query(
+        `SELECT s.status FROM shops s
+         LEFT JOIN admins a ON a.shop_id = s.id
+         LEFT JOIN profiles p ON p.id = a.profile_id
+         WHERE s.owner_account_id = $1
+            OR p.account_id = $1
+         LIMIT 1`,
+        [account.id],
+      );
+      if (shop?.status === 'disabled') {
+        const [cfg] = await this.dataSource.query(
+          `SELECT value FROM system_config WHERE key = 'allow_inactive_shop_login'`,
+        );
+        const allowLogin = cfg?.value === 'true';
+        if (!allowLogin) {
+          throw new UnauthorizedException('Tu negocio está deshabilitado. Contacta al administrador.');
+        }
+      }
+    }
+
     return this.token(account);
   }
 

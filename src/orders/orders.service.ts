@@ -96,8 +96,7 @@ export class OrdersService {
   }
 
   private async getPlatformServiceFee(): Promise<number> {
-    const fee = await this.cfg.getNumber('app_service_fee', 1);
-    return Number.isFinite(fee) && fee > 0 ? fee : 0;
+    return 0; // El cobro por servicio fue eliminado. La plataforma cobra via créditos del rider.
   }
 
   private async getPlatformDeliveryFees(): Promise<{ delivery: number; express: number }> {
@@ -268,12 +267,18 @@ export class OrdersService {
       }
 
       const shops = await em.query(
-        'SELECT id FROM shops WHERE id = $1',
+        'SELECT id, status FROM shops WHERE id = $1',
         [dto.shopId],
       );
       if (!shops.length)
         throw new NotFoundException('Negocio no encontrado');
+      const shopDisabled = shops[0].status === 'disabled';
       const deliveryType = dto.deliveryType ?? 'delivery';
+      if (shopDisabled && deliveryType !== 'express') {
+        throw new BadRequestException(
+          'Este negocio solo acepta pedidos express por el momento.',
+        );
+      }
       const deliveryFee =
         deliveryType === 'recogida' ? 0
         : deliveryType === 'express' ? platformDeliveryFees.express
@@ -326,10 +331,11 @@ export class OrdersService {
         }
       }
 
+      const isCash = dto.paymentMethod === 'cash';
       const order = em.create(OrderEntity, {
         clientId: userId,
         shopId: dto.shopId,
-        status: 'pendiente',
+        status: shopDisabled ? 'listo' : isCash ? 'confirmado' : 'pendiente',
         deliveryType,
         deliveryAddress,
         deliveryLat,
@@ -342,6 +348,10 @@ export class OrdersService {
         couponDiscount,
         couponAbsorbs,
         orderSize,
+        paymentMethod: dto.paymentMethod ?? 'qr',
+        riderInstructions: shopDisabled
+          ? 'Ir al negocio, pedir en caja, esperar el pedido y recoger.'
+          : undefined,
         notes: dto.notes,
       });
       const saved = await em.save(OrderEntity, order);
@@ -376,6 +386,8 @@ export class OrdersService {
 
     if (saved.deliveryType === 'express') {
       const group = await this.deliveryGroups.createGroupForOrders([saved.id]);
+      // Si el negocio estaba deshabilitado la orden ya nació en 'listo' — activar grupo inmediatamente
+      await this.deliveryGroups.checkAndActivateGroup(group.id);
       const paymentReference = this.buildPaymentReference('group', group.id);
       await this.createPendingPayment({
         reference: paymentReference,
@@ -705,18 +717,20 @@ export class OrdersService {
         }
 
         const shops = await em.query(
-          'SELECT delivery_fee FROM shops WHERE id = $1',
+          'SELECT delivery_fee, status FROM shops WHERE id = $1',
           [restaurantOrder.shopId],
         );
         if (!shops.length)
           throw new NotFoundException('Negocio no encontrado');
+        const shopDisabled = shops[0].status === 'disabled';
         const deliveryFee = Number(shops[0].delivery_fee) * 2; // express = ×2
         const total = subtotal + deliveryFee;
 
+        const isCash = dto.paymentMethod === 'cash';
         const order = em.create(OrderEntity, {
           clientId: userId,
           shopId: restaurantOrder.shopId,
-          status: 'pendiente',
+          status: shopDisabled ? 'listo' : isCash ? 'confirmado' : 'pendiente',
           deliveryType: 'express',
           deliveryAddress: dto.deliveryAddress,
           deliveryLat: dto.deliveryLat,
@@ -727,6 +741,10 @@ export class OrdersService {
           total,
           orderSize,
           notes: restaurantOrder.notes,
+          paymentMethod: dto.paymentMethod ?? 'qr',
+          riderInstructions: shopDisabled
+            ? 'Ir al negocio, pedir en caja, esperar el pedido y recoger.'
+            : undefined,
         });
         const s = await em.save(OrderEntity, order);
         for (const item of validatedItems) {
@@ -761,6 +779,8 @@ export class OrdersService {
     }
 
     const group = await this.deliveryGroups.createGroupForOrders(orderIds);
+    // Si algún negocio estaba deshabilitado sus órdenes ya nacieron en 'listo' — activar grupo inmediatamente
+    await this.deliveryGroups.checkAndActivateGroup(group.id);
     const paymentReference = this.buildPaymentReference('group', group.id);
     await this.createPendingPayment({
       reference: paymentReference,
@@ -810,7 +830,7 @@ export class OrdersService {
       );
     }
     const unpaid = orders.filter(
-      (o) => !['cancelado', 'entregado', 'confirmado'].includes(o.status),
+      (o) => !['cancelado', 'entregado', 'confirmado', 'preparando', 'listo', 'en_camino'].includes(o.status),
     );
     for (const o of unpaid) {
       await this.orders.update(o.id, { status: 'confirmado' });
@@ -889,6 +909,55 @@ export class OrdersService {
       return { id: orderId, status, groupsCreated: newGroups.length };
     }
     return { id: orderId, status };
+  }
+
+  async riderCancelOrder(riderId: string, orderId: string, reason: string) {
+    const order = await this.orders.findOne({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Orden no encontrada');
+
+    const cancellable = ['confirmado', 'listo', 'en_camino'];
+    if (!cancellable.includes(order.status)) {
+      throw new ForbiddenException(
+        `No se puede cancelar una orden con estado '${order.status}'`,
+      );
+    }
+
+    // Si la orden pertenece a un grupo, verificar que el rider sea el asignado
+    if (order.groupId) {
+      const [grp] = await this.dataSource.query(
+        `SELECT dg.rider_id FROM delivery_groups dg
+         JOIN profiles p ON p.id = dg.rider_id
+         WHERE dg.id = $1`,
+        [order.groupId],
+      );
+      // Buscar el account_id del rider para comparar
+      const [riderRow] = await this.dataSource.query(
+        `SELECT p.account_id FROM delivery_groups dg
+         JOIN riders r ON r.id = dg.rider_id
+         JOIN profiles p ON p.id = r.profile_id
+         WHERE dg.id = $1`,
+        [order.groupId],
+      );
+      if (riderRow && riderRow.account_id !== riderId) {
+        throw new ForbiddenException('No tenés acceso a esta orden');
+      }
+    }
+
+    await this.orders.update(orderId, {
+      status: 'cancelado',
+      cancelReason: reason || null,
+    });
+
+    // Notificar al cliente
+    const [shop] = await this.dataSource.query(
+      'SELECT name FROM shops WHERE id = $1',
+      [order.shopId],
+    );
+    this.notifications
+      .notifyClientOrderCancelled(order.clientId, reason, shop?.name ?? '')
+      .catch(() => {});
+
+    return { id: orderId, status: 'cancelado' };
   }
 
   async cancelOrder(userId: string, orderId: string) {

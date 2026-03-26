@@ -9,6 +9,7 @@ import { DeliveryGroupsModule } from '../delivery-groups/delivery-groups.module'
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
 import { CouponsModule } from '../coupons/coupons.module';
+import { CreditsModule } from '../credits/credits.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { CouponsModule } from '../coupons/coupons.module';
     NotificationsModule,
     SystemConfigModule,
     CouponsModule,
+    CreditsModule,
   ],
   controllers: [OrdersController, PaymentsController],
   providers: [OrdersService],

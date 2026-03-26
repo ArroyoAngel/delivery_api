@@ -20,6 +20,8 @@ import { TelegramModule } from './telegram/telegram.module';
 import { ZonesModule } from './zones/zones.module';
 import { SupportModule } from './support/support.module';
 import { CouponsModule } from './coupons/coupons.module';
+import { CreditsModule } from './credits/credits.module';
+import { RatingsModule } from './ratings/ratings.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuthZModule, AUTHZ_ENFORCER } from 'nest-authz';
 import TypeORMAdapter from 'typeorm-adapter';
@@ -50,7 +52,10 @@ m = r.sub == p.sub && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act) && p.e
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['.env.local', '.env'],
+    }),
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
@@ -103,6 +108,8 @@ m = r.sub == p.sub && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act) && p.e
     ZonesModule,
     SupportModule,
     CouponsModule,
+    CreditsModule,
+    RatingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

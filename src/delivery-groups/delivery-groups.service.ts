@@ -11,6 +11,7 @@ import { DeliveryGroupEntity } from './entities/delivery-group.entity';
 import { OrderEntity } from '../orders/entities/order.entity';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { EventsGateway } from '../events/events.gateway';
 
 // Fórmula Haversine: distancia en metros entre dos coordenadas
 function haversineMeters(
@@ -40,6 +41,7 @@ export class DeliveryGroupsService {
     private dataSource: DataSource,
     private cfg: SystemConfigService,
     private notifications: NotificationsService,
+    private events: EventsGateway,
   ) {}
 
   async getLocationIntervalSeconds(): Promise<number> {
@@ -162,6 +164,47 @@ export class DeliveryGroupsService {
     }
   }
 
+  async getTodayStats(accountId: string) {
+    const riderId = await this.resolveRiderId(accountId);
+    if (!riderId) return { deliveries_today: 0, earnings_today: 0, credits: 0 };
+
+    const [[delivered], [credits]] = await Promise.all([
+      this.dataSource.query(
+        `SELECT
+           COUNT(*) AS deliveries_today,
+           COALESCE(SUM(delivery_fee), 0) AS earnings_today
+         FROM orders
+         WHERE rider_id = $1
+           AND status = 'entregado'
+           AND updated_at::date = CURRENT_DATE`,
+        [riderId],
+      ),
+      this.dataSource.query(
+        `SELECT COALESCE(balance, 0) AS balance FROM rider_credits WHERE rider_id = $1`,
+        [riderId],
+      ),
+    ]);
+
+    return {
+      deliveries_today: Number(delivered.deliveries_today ?? 0),
+      earnings_today: Number(delivered.earnings_today ?? 0),
+      credits: Number(credits?.balance ?? 0),
+    };
+  }
+
+  async setAvailable(accountId: string, available: boolean) {
+    await this.dataSource.query(
+      `UPDATE riders r
+       SET is_available = $1
+       FROM profiles p
+       WHERE p.id = r.profile_id
+         AND p.account_id = $2`,
+      [available, accountId],
+    );
+    this.events.emitRiderStatusChanged(accountId, available);
+    return { available };
+  }
+
   async getAllRiders() {
     return this.dataSource.query(`
       SELECT
@@ -263,6 +306,7 @@ export class DeliveryGroupsService {
           await this.orders.update(o.id, { groupId: newGroup.id });
         }
         createdGroups.push(newGroup);
+        this.events.emitNewDeliveryGroup(newGroup.id);
       }
     }
 
@@ -294,6 +338,17 @@ export class DeliveryGroupsService {
     const riderId = await this.resolveRiderId(accountId);
     if (!riderId)
       throw new ForbiddenException('No estás registrado como repartidor');
+
+    // Verificar que el rider tiene créditos disponibles
+    const [credits] = await this.dataSource.query(
+      `SELECT balance FROM rider_credits WHERE rider_id = $1`,
+      [riderId],
+    );
+    if (!credits || Number(credits.balance) <= 0) {
+      throw new ForbiddenException(
+        'No tienes créditos disponibles. Recarga tu saldo para continuar aceptando pedidos.',
+      );
+    }
 
     const group = await this.groups.findOne({
       where: { id: groupId, status: 'available' },
@@ -366,6 +421,13 @@ export class DeliveryGroupsService {
     this.notifications
       .notifyClientOrderStatus(order.clientId, 'entregado')
       .catch(() => null);
+
+    // Descontar 1 crédito del rider al completar la entrega
+    await this.dataSource.query(
+      `UPDATE rider_credits SET balance = GREATEST(balance - 1, 0), updated_at = NOW()
+       WHERE rider_id = $1`,
+      [riderId],
+    );
 
     // Transferir delivery fee al wallet del repartidor
     if (riderId) {
@@ -565,7 +627,12 @@ export class DeliveryGroupsService {
     const orders = await this.dataSource.query(
       `SELECT o.*,
               r.name AS shop_name, r.address AS shop_address,
-              r.latitude AS shop_lat, r.longitude AS shop_lng
+              r.latitude AS shop_lat, r.longitude AS shop_lng,
+              COALESCE(r.rating, 5) AS shop_rating,
+              COALESCE((SELECT ROUND(AVG(ra.score)::numeric, 1)
+               FROM ratings ra
+               WHERE ra.target_account_id = o.client_id
+                 AND ra.target_type = 'client'), 5) AS client_rating
        FROM orders o
        JOIN shops r ON r.id = o.shop_id
        WHERE o.group_id = $1`,
@@ -586,5 +653,37 @@ export class DeliveryGroupsService {
     );
 
     return { ...group, orders: enrichedOrders };
+  }
+
+  // ── Créditos del rider ──────────────────────────────────────────────────────
+
+  async getRiderCredits(riderId: string) {
+    const [row] = await this.dataSource.query(
+      `SELECT balance, updated_at FROM rider_credits WHERE rider_id = $1`,
+      [riderId],
+    );
+    return { riderId, balance: row ? Number(row.balance) : 0, updatedAt: row?.updated_at ?? null };
+  }
+
+  async getMyCredits(accountId: string) {
+    const riderId = await this.resolveRiderId(accountId);
+    if (!riderId) throw new ForbiddenException('No estás registrado como repartidor');
+    return this.getRiderCredits(riderId);
+  }
+
+  async adjustRiderCredits(riderId: string, amount: number, reason?: string) {
+    await this.dataSource.query(
+      `INSERT INTO rider_credits (id, rider_id, balance)
+       VALUES (gen_random_uuid(), $1, GREATEST($2, 0))
+       ON CONFLICT (rider_id) DO UPDATE
+         SET balance = GREATEST(rider_credits.balance + $2, 0),
+             updated_at = NOW()`,
+      [riderId, amount],
+    );
+    const [row] = await this.dataSource.query(
+      `SELECT balance FROM rider_credits WHERE rider_id = $1`,
+      [riderId],
+    );
+    return { riderId, balance: Number(row.balance), reason: reason ?? null };
   }
 }
