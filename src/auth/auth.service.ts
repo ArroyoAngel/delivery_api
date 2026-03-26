@@ -14,7 +14,7 @@ import { Resend } from 'resend';
 
 @Injectable()
 export class AuthService {
-  private resend: Resend;
+  private resend: Resend | null = null;
 
   constructor(
     @InjectRepository(AccountEntity)
@@ -23,7 +23,8 @@ export class AuthService {
     private dataSource: DataSource,
     private config: ConfigService,
   ) {
-    this.resend = new Resend(this.config.get('RESEND_API_KEY', ''));
+    const key = this.config.get<string>('RESEND_API_KEY', '');
+    if (key) this.resend = new Resend(key);
   }
 
   private token(account: AccountEntity) {
@@ -54,6 +55,9 @@ export class AuthService {
       [email, code, expiresAt],
     );
 
+    if (!this.resend) {
+      throw new BadRequestException('El servicio de email no está configurado en el servidor');
+    }
     const fromEmail = this.config.get('RESEND_FROM_EMAIL', 'onboarding@resend.dev');
     const { data, error } = await this.resend.emails.send({
       from: fromEmail,

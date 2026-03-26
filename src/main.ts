@@ -10,7 +10,10 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
-  app.enableCors();
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : true; // true = reflect request origin (allow all) — solo para desarrollo
+  app.enableCors({ origin: allowedOrigins, credentials: true });
 
   const config = new DocumentBuilder()
     .setTitle('YaYa Eats API')
