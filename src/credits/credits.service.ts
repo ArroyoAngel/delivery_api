@@ -186,7 +186,7 @@ export class CreditsService {
     };
   }
 
-  async submitProof(accountId: string, purchaseId: string, file: Express.Multer.File) {
+  async submitProof(accountId: string, purchaseId: string, proofImageUrl: string) {
     const riderId = await this.resolveRiderId(accountId);
     if (!riderId) throw new ForbiddenException('No estás registrado como repartidor');
 
@@ -196,8 +196,6 @@ export class CreditsService {
       throw new ConflictException('Solo se puede enviar comprobante de compras pendientes o rechazadas');
     }
 
-    const baseUrl = (process.env.API_BASE_URL ?? 'http://localhost:3002/api').replace('/api', '');
-    const proofImageUrl = `${baseUrl}/uploads/${file.filename}`;
     await this.purchases.update(purchaseId, {
       proofImageUrl,
       status: 'pending',

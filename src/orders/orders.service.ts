@@ -18,6 +18,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventsGateway } from '../events/events.gateway';
 
 @Injectable()
 export class OrdersService {
@@ -29,6 +30,7 @@ export class OrdersService {
     private cfg: SystemConfigService,
     private coupons: CouponsService,
     private eventEmitter: EventEmitter2,
+    private events: EventsGateway,
   ) {}
 
   private readonly effectiveStatuses = [
@@ -46,20 +48,22 @@ export class OrdersService {
 
   private async resolveShopForAccount(
     accountId: string,
-  ): Promise<{ id: string; name: string }> {
+  ): Promise<{ id: string; name: string; serviceCategory: string }> {
     let [shop] = await this.dataSource.query(
-      `SELECT id, name
-       FROM shops
-       WHERE owner_account_id = $1
+      `SELECT s.id, s.name, COALESCE(bt.service_category, 'food') AS "serviceCategory"
+       FROM shops s
+       LEFT JOIN business_types bt ON bt.value = s.business_type
+       WHERE s.owner_account_id = $1
        LIMIT 1`,
       [accountId],
     );
 
     if (!shop) {
       [shop] = await this.dataSource.query(
-        `SELECT r.id, r.name
-         FROM shops r
-         JOIN admins a ON a.shop_id = r.id
+        `SELECT s.id, s.name, COALESCE(bt.service_category, 'food') AS "serviceCategory"
+         FROM shops s
+         LEFT JOIN business_types bt ON bt.value = s.business_type
+         JOIN admins a ON a.shop_id = s.id
          JOIN profiles p ON p.id = a.profile_id
          WHERE p.account_id = $1
          LIMIT 1`,
@@ -70,29 +74,6 @@ export class OrdersService {
     if (!shop)
       throw new NotFoundException('No tenés un negocio asignado');
     return shop;
-  }
-
-  private async ensureDefaultServiceAreas(shopId: string): Promise<void> {
-    const [existing] = await this.dataSource.query(
-      `SELECT 1 FROM shop_service_areas WHERE shop_id = $1 LIMIT 1`,
-      [shopId],
-    );
-    if (existing) return;
-
-    const defaults: Array<[string, string, string, number]> = [
-      ['Mesas salón', 'mesa', '#f97316', 1],
-      ['Barra', 'barra', '#0ea5e9', 2],
-      ['Terraza', 'terraza', '#22c55e', 3],
-      ['Recojo en tienda', 'salon', '#a855f7', 4],
-    ];
-
-    for (const [name, kind, color, sortOrder] of defaults) {
-      await this.dataSource.query(
-        `INSERT INTO shop_service_areas (shop_id, name, kind, color, sort_order)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [shopId, name, kind, color, sortOrder],
-      );
-    }
   }
 
   private async getPlatformServiceFee(): Promise<number> {
@@ -384,6 +365,8 @@ export class OrdersService {
       return saved;
     });
 
+    this.events.emitOrderUpdated();
+
     if (saved.deliveryType === 'express') {
       const group = await this.deliveryGroups.createGroupForOrders([saved.id]);
       // Si el negocio estaba deshabilitado la orden ya nació en 'listo' — activar grupo inmediatamente
@@ -477,7 +460,6 @@ export class OrdersService {
 
   async getShopServiceAreas(accountId: string) {
     const shop = await this.resolveShopForAccount(accountId);
-    await this.ensureDefaultServiceAreas(shop.id);
 
     return this.dataSource.query(
       `SELECT id, shop_id AS "shopId", name, kind, color, sort_order AS "sortOrder", is_active AS "isActive"
@@ -488,12 +470,68 @@ export class OrdersService {
     );
   }
 
+  async getShopAreaKindOptions(accountId: string) {
+    const shop = await this.resolveShopForAccount(accountId);
+    return this.dataSource.query(
+      `SELECT value, label, type, web_icon AS "webIcon", color, sort_order AS "sortOrder"
+       FROM area_kind_options
+       WHERE shop_id IS NULL OR shop_id = $1
+       ORDER BY sort_order`,
+      [shop.id],
+    );
+  }
+
   async createShopServiceArea(
     accountId: string,
     dto: CreateRestaurantServiceAreaDto,
   ) {
     const shop = await this.resolveShopForAccount(accountId);
 
+    if (shop.serviceCategory !== 'food')
+      throw new ForbiddenException('Las zonas de servicio solo aplican a negocios de tipo food');
+
+    return this.insertServiceArea(shop.id, dto);
+  }
+
+  async getShopServiceAreasByShopId(shopId: string) {
+    const [shop] = await this.dataSource.query(
+      `SELECT s.id, COALESCE(bt.service_category, 'food') AS "serviceCategory"
+       FROM shops s
+       LEFT JOIN business_types bt ON bt.value = s.business_type
+       WHERE s.id = $1`,
+      [shopId],
+    );
+    if (!shop) throw new NotFoundException('Negocio no encontrado');
+
+    return this.dataSource.query(
+      `SELECT id, shop_id AS "shopId", name, kind, color, sort_order AS "sortOrder", is_active AS "isActive"
+       FROM shop_service_areas
+       WHERE shop_id = $1
+       ORDER BY sort_order, created_at`,
+      [shopId],
+    );
+  }
+
+  async createShopServiceAreaForShop(
+    shopId: string,
+    dto: CreateRestaurantServiceAreaDto,
+  ) {
+    const [shop] = await this.dataSource.query(
+      `SELECT s.id, COALESCE(bt.service_category, 'food') AS "serviceCategory"
+       FROM shops s
+       LEFT JOIN business_types bt ON bt.value = s.business_type
+       WHERE s.id = $1`,
+      [shopId],
+    );
+    if (!shop) throw new NotFoundException('Negocio no encontrado');
+
+    if (shop.serviceCategory !== 'food')
+      throw new ForbiddenException('Las zonas de servicio solo aplican a negocios de tipo food');
+
+    return this.insertServiceArea(shopId, dto);
+  }
+
+  private async insertServiceArea(shopId: string, dto: CreateRestaurantServiceAreaDto) {
     const [row] = await this.dataSource.query(
       `INSERT INTO shop_service_areas (shop_id, name, kind, color, sort_order)
        VALUES (
@@ -504,9 +542,8 @@ export class OrdersService {
          (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM shop_service_areas WHERE shop_id = $1)
        )
        RETURNING id, shop_id AS "shopId", name, kind, color, sort_order AS "sortOrder", is_active AS "isActive"`,
-      [shop.id, dto.name, dto.kind ?? null, dto.color ?? null],
+      [shopId, dto.name, dto.kind || null, dto.color || null],
     );
-
     return row;
   }
 
@@ -659,6 +696,7 @@ export class OrdersService {
     this.notifications
       .notifyShopNewOrder(saved.shopId, saved.id)
       .catch(() => null);
+    this.events.emitOrderUpdated();
 
     return {
       ...saved,
@@ -900,6 +938,7 @@ export class OrdersService {
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Orden no encontrada');
     await this.orders.update(orderId, { status });
+    this.events.emitOrderUpdated();
     if (status === 'listo') {
       if (order.groupId) {
         await this.deliveryGroups.checkAndActivateGroup(order.groupId);

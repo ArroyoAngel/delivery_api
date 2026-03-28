@@ -3,21 +3,20 @@ import {
   UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { memoryStorage } from 'multer';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CasbinGuard } from '../authorization/guards/casbin.guard';
 import { SystemConfigService } from './system-config.service';
-
-const uploadDir = join(process.cwd(), 'uploads');
-if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
+import { FirebaseStorageService } from '../firebase-storage/firebase-storage.service';
 
 @ApiTags('Config')
 @Controller('config')
 export class SystemConfigController {
-  constructor(private readonly cfg: SystemConfigService) {}
+  constructor(
+    private readonly cfg: SystemConfigService,
+    private readonly storage: FirebaseStorageService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Listar configuraciones del sistema' })
@@ -46,21 +45,15 @@ export class SystemConfigController {
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: uploadDir,
-        filename: (_req, file, cb) => {
-          const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-          cb(null, `${unique}${extname(file.originalname)}`);
-        },
-      }),
-      limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
         cb(null, /\.(jpg|jpeg|png|webp|gif)$/i.test(file.originalname));
       },
     }),
   )
-  uploadImage(@UploadedFile() file: Express.Multer.File) {
-    const baseUrl = process.env.API_BASE_URL?.replace('/api', '') ?? 'http://localhost:3002';
-    return { url: `${baseUrl}/uploads/${file.filename}` };
+  async uploadImage(@UploadedFile() file: Express.Multer.File) {
+    const url = await this.storage.upload(file, 'config');
+    return { url };
   }
 }

@@ -26,6 +26,7 @@
     "seeds:run": "npm run typeorm -- migration:run -d ormconfig-seed.ts",
     "seeds:revert": "npm run typeorm -- migration:revert -d ormconfig-seed.ts",
     "schema:drop": "npm run typeorm -- schema:drop -d ormconfig.ts",
+    "reset": "npm run schema:drop && npm run migrations:run && npm run seeds:run",
     "setup": "npm run migrations:run && npm run seeds:run",
     "setup:prod": "npx tsc -p tsconfig.migrations.json --noEmitOnError false && npm run migrations:run && npm run seeds:run"
   },
@@ -60,6 +61,7 @@
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.3",
     "swagger-ui-express": "^5.0.1",
+    "multer": "^1.4.5-lts.1",
     "typeorm": "^0.3.28",
     "typeorm-adapter": "^1.9.0"
   },

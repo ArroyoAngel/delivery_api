@@ -103,9 +103,6 @@ export class CreateRestaurantLocalOrderDto {
 
 export class CreateRestaurantServiceAreaDto {
   @ApiProperty() @IsString() name: string;
-  @ApiProperty({ required: false, enum: ['mesa', 'barra', 'salon', 'terraza'] })
-  @IsOptional()
-  @IsEnum(['mesa', 'barra', 'salon', 'terraza'])
-  kind?: 'mesa' | 'barra' | 'salon' | 'terraza';
+  @ApiProperty({ required: false }) @IsOptional() @IsString() kind?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() color?: string;
 }

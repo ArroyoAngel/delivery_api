@@ -14,8 +14,25 @@ import { Request } from 'express';
 export class CasbinGuard implements CanActivate {
   private _lastReload = 0;
   private readonly _reloadCooldownMs = 60_000; // recargar máx 1 vez por minuto
+  private _reloading: Promise<void> | null = null;
 
   constructor(@Inject(AUTHZ_ENFORCER) private enforcer: Enforcer) {}
+
+  private async _reloadIfNeeded(): Promise<void> {
+    // Si ya hay un reload en curso, esperar a que termine en lugar de saltarlo
+    if (this._reloading) {
+      await this._reloading;
+      return;
+    }
+    const now = Date.now();
+    if (now - this._lastReload <= this._reloadCooldownMs) return;
+
+    this._reloading = this.enforcer.loadPolicy().finally(() => {
+      this._lastReload = Date.now();
+      this._reloading = null;
+    });
+    await this._reloading;
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<Request>();
@@ -30,13 +47,9 @@ export class CasbinGuard implements CanActivate {
     for (const role of roles) {
       let allowed = await this.enforcer.enforce(role, resource, method);
       if (!allowed) {
-        // Si falló, recargamos políticas (máx 1 vez por minuto) por si hubo seeds nuevos
-        const now = Date.now();
-        if (now - this._lastReload > this._reloadCooldownMs) {
-          this._lastReload = now;
-          await this.enforcer.loadPolicy();
-          allowed = await this.enforcer.enforce(role, resource, method);
-        }
+        // Si falló, recargar políticas esperando a que termine antes de re-evaluar
+        await this._reloadIfNeeded();
+        allowed = await this.enforcer.enforce(role, resource, method);
       }
       if (allowed) return true;
     }

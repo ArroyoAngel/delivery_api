@@ -9,6 +9,8 @@ import { Repository, DataSource } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AccountEntity } from './account.entity';
+import { ProfileEntity } from '../profiles/profile.entity';
+import { ClientEntity } from '../profiles/client.entity';
 import * as admin from 'firebase-admin';
 import { Resend } from 'resend';
 
@@ -19,6 +21,10 @@ export class AuthService {
   constructor(
     @InjectRepository(AccountEntity)
     private accounts: Repository<AccountEntity>,
+    @InjectRepository(ProfileEntity)
+    private profiles: Repository<ProfileEntity>,
+    @InjectRepository(ClientEntity)
+    private clientRepo: Repository<ClientEntity>,
     private jwt: JwtService,
     private dataSource: DataSource,
     private config: ConfigService,
@@ -130,6 +136,14 @@ export class AuthService {
       [account.id, params.firstName, params.lastName],
     );
 
+    // Crear registro en clients
+    await this.dataSource.query(
+      `INSERT INTO clients (id, profile_id)
+       SELECT gen_random_uuid(), p.id FROM profiles p WHERE p.account_id = $1
+       ON CONFLICT (profile_id) DO NOTHING`,
+      [account.id],
+    );
+
     return this.token(account);
   }
 
@@ -216,6 +230,13 @@ export class AuthService {
            ON CONFLICT (account_id) DO UPDATE SET phone = EXCLUDED.phone`,
           [account.id, phone],
         );
+        // Crear registro en clients
+        await this.dataSource.query(
+          `INSERT INTO clients (id, profile_id)
+           SELECT gen_random_uuid(), p.id FROM profiles p WHERE p.account_id = $1
+           ON CONFLICT (profile_id) DO NOTHING`,
+          [account.id],
+        );
       }
       return this.token(account);
     }
@@ -301,6 +322,17 @@ export class AuthService {
       } else {
         account = await this.accounts.save(
           this.accounts.create({ email, googleId }),
+        );
+        // Crear perfil y registro en clients para cuentas nuevas de Google
+        await this.dataSource.query(
+          `INSERT INTO profiles (id, account_id) VALUES (gen_random_uuid(), $1) ON CONFLICT (account_id) DO NOTHING`,
+          [account.id],
+        );
+        await this.dataSource.query(
+          `INSERT INTO clients (id, profile_id)
+           SELECT gen_random_uuid(), p.id FROM profiles p WHERE p.account_id = $1
+           ON CONFLICT (profile_id) DO NOTHING`,
+          [account.id],
         );
       }
     }

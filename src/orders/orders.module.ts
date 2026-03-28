@@ -10,6 +10,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { CreditsModule } from '../credits/credits.module';
+import { EventsModule } from '../events/events.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { CreditsModule } from '../credits/credits.module';
     SystemConfigModule,
     CouponsModule,
     CreditsModule,
+    EventsModule,
   ],
   controllers: [OrdersController, PaymentsController],
   providers: [OrdersService],

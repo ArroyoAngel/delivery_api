@@ -16,7 +16,7 @@ export class RiderEntity {
   @JoinColumn({ name: 'profile_id' })
   profile: ProfileEntity;
 
-  @Column({ name: 'vehicle_type', nullable: true }) vehicleType: string; // moto | bici | auto
+  @Column({ name: 'vehicle_type', type: 'varchar', nullable: true }) vehicleType: string | null; // moto | bici | auto
   @Column({ name: 'is_available', default: false }) isAvailable: boolean;
   @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
   lat: number;
@@ -24,5 +24,12 @@ export class RiderEntity {
   lng: number;
 
   @Column({ name: 'zone_id', type: 'uuid', nullable: true }) zoneId: string | null;
+
+  @Column({ name: 'license_front_url', type: 'varchar', nullable: true }) licenseFrontUrl: string | null;
+  @Column({ name: 'license_back_url', type: 'varchar', nullable: true }) licenseBackUrl: string | null;
+  @Column({ type: 'varchar', nullable: true }) plate: string | null;
+  @Column({ name: 'policy_url', type: 'varchar', nullable: true }) policyUrl: string | null;
+  @Column({ type: 'varchar', nullable: true }) vin: string | null;
+
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
 }

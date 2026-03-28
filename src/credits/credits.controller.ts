@@ -13,23 +13,22 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { memoryStorage } from 'multer';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CasbinGuard } from '../authorization/guards/casbin.guard';
 import { CreditsService } from './credits.service';
-
-const uploadDir = join(process.cwd(), 'uploads');
-if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
+import { FirebaseStorageService } from '../firebase-storage/firebase-storage.service';
 
 @ApiTags('Credits')
 @Controller('credits')
 @UseGuards(JwtAuthGuard, CasbinGuard)
 @ApiBearerAuth()
 export class CreditsController {
-  constructor(private readonly service: CreditsService) {}
+  constructor(
+    private readonly service: CreditsService,
+    private readonly storage: FirebaseStorageService,
+  ) {}
 
   // ── Paquetes ──────────────────────────────────────────────────────────────
 
@@ -84,25 +83,20 @@ export class CreditsController {
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: uploadDir,
-        filename: (_req, file, cb) => {
-          const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-          cb(null, `${unique}${extname(file.originalname)}`);
-        },
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
         cb(null, /\.(jpg|jpeg|png|webp)$/i.test(file.originalname));
       },
     }),
   )
-  submitProof(
+  async submitProof(
     @Request() req: any,
     @Param('id') purchaseId: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    return this.service.submitProof(req.user.id, purchaseId, file);
+    const proofImageUrl = await this.storage.upload(file, 'credits');
+    return this.service.submitProof(req.user.id, purchaseId, proofImageUrl);
   }
 
   @Delete('purchases/:id')

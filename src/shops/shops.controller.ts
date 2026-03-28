@@ -15,9 +15,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { memoryStorage } from 'multer';
 import {
   ApiOperation,
   ApiQuery,
@@ -26,10 +24,8 @@ import {
   ApiParam,
   ApiConsumes,
 } from '@nestjs/swagger';
-
-const uploadDir = join(process.cwd(), 'uploads');
-if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
 import { ShopsService } from './shops.service';
+import { FirebaseStorageService } from '../firebase-storage/firebase-storage.service';
 import { ShopStaffService } from './shop-staff.service';
 import { ShopScheduleService } from './shop-schedule.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -42,7 +38,22 @@ export class ShopsController {
     private readonly shops: ShopsService,
     private readonly staff: ShopStaffService,
     private readonly schedule: ShopScheduleService,
+    private readonly storage: FirebaseStorageService,
   ) {}
+
+  // ── Tipos de negocio ──────────────────────────────────────────────────────
+
+  @Get('business-types')
+  @ApiOperation({ summary: 'Lista de tipos de negocio (restaurant, cafe, pharmacy…)' })
+  getBusinessTypes() {
+    return this.shops.getBusinessTypes();
+  }
+
+  @Get('area-kind-options')
+  @ApiOperation({ summary: 'Catálogo de tipos de zona para negocios food (mesa, barra, salón, terraza)' })
+  getAreaKindOptions() {
+    return this.shops.getAreaKindOptions();
+  }
 
   // ── Categorías ────────────────────────────────────────────────────────────
 
@@ -51,6 +62,16 @@ export class ShopsController {
   @ApiQuery({ name: 'businessType', required: false, description: 'restaurant | supermarket | minimarket' })
   categories(@Query('businessType') businessType?: string) {
     return this.shops.getCategories(businessType);
+  }
+
+  // ── Crear negocio ─────────────────────────────────────────────────────────
+
+  @Post()
+  @UseGuards(JwtAuthGuard, CasbinGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Crear un nuevo negocio (superadmin)' })
+  createShop(@Body() body: any) {
+    return this.shops.create(body);
   }
 
   // ── Listado / detalle ─────────────────────────────────────────────────────
@@ -111,31 +132,45 @@ export class ShopsController {
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: uploadDir,
-        filename: (_req, file, cb) => {
-          const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-          cb(null, `${unique}${extname(file.originalname)}`);
-        },
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: 5 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
         cb(null, /\.(jpg|jpeg|png|webp|gif)$/i.test(file.originalname));
       },
     }),
   )
-  uploadQr(
+  async uploadQr(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
     @Request() req: any,
   ) {
-    const baseUrl = process.env.API_BASE_URL?.replace('/api', '') ?? 'http://localhost:3002';
-    const url = `${baseUrl}/uploads/${file.filename}`;
+    const url = await this.storage.upload(file, 'shops');
     const isSuperAdmin: boolean = req.user.roles?.includes('superadmin');
     return this.shops.uploadQrImage(id, url, req.user.id, isSuperAdmin);
   }
 
   // ── Menú ──────────────────────────────────────────────────────────────────
+
+  @Post(':id/upload-menu-image')
+  @UseGuards(JwtAuthGuard, CasbinGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Subir imagen de producto del menú' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        cb(null, /\.(jpg|jpeg|png|webp)$/i.test(file.originalname));
+      },
+    }),
+  )
+  async uploadMenuImage(
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    const url = await this.storage.upload(file, 'menu');
+    return { url };
+  }
 
   @Post(':id/menu/categories')
   @UseGuards(JwtAuthGuard, CasbinGuard)

@@ -60,5 +60,9 @@ export class AdminEntity {
   @Column({ name: 'role_name', type: 'varchar', length: 100, nullable: true })
   roleName: string | null;
 
+  /** Fecha de inicio / antigüedad del administrador en la plataforma. */
+  @Column({ name: 'started_at', type: 'date', nullable: true })
+  startedAt: string | null;
+
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
 }

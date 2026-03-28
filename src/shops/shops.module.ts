@@ -7,6 +7,7 @@ import { ShopScheduleService } from './shop-schedule.service';
 import { ShopEntity } from './entities/shop.entity';
 import { MenuItemEntity } from './entities/menu-item.entity';
 import { ShopScheduleEntity } from './entities/shop-schedule.entity';
+import { BusinessTypeEntity } from './entities/business-type.entity';
 import { AuthModule } from '../auth/auth.module';
 import { EventsModule } from '../events/events.module';
 
@@ -16,6 +17,7 @@ import { EventsModule } from '../events/events.module';
       ShopEntity,
       MenuItemEntity,
       ShopScheduleEntity,
+      BusinessTypeEntity,
     ]),
     AuthModule,
     EventsModule,

@@ -542,8 +542,17 @@ export class PaymentsAdminService {
       return { total_earned: '0', pending_withdrawals_amount: '0', available_balance: '0' };
     }
 
+    // Total ganado = suma de delivery_fee de TODAS las entregas completadas (efectivo + QR)
     const [earned] = await this.dataSource.query(
-      `SELECT COALESCE(SUM(amount), 0) AS total_earned
+      `SELECT COALESCE(SUM(delivery_fee), 0) AS total_earned
+       FROM orders
+       WHERE rider_id = $1 AND status = 'entregado'`,
+      [riderId],
+    );
+
+    // Disponible = solo pagos QR confirmados que la plataforma retiene para el rider
+    const [qr] = await this.dataSource.query(
+      `SELECT COALESCE(SUM(amount), 0) AS qr_balance
        FROM wallet_transactions
        WHERE owner_type = 'rider' AND owner_id = $1 AND status = 'confirmed'`,
       [riderId],
@@ -557,11 +566,9 @@ export class PaymentsAdminService {
     );
 
     const totalEarned = Number(earned.total_earned ?? 0);
+    const qrBalance = Number(qr.qr_balance ?? 0);
     const pendingAmount = Number(pending.pending_withdrawals_amount ?? 0);
-    const available = Math.max(0, totalEarned - pendingAmount);
-    console.log("totalEarned: " + totalEarned);
-    console.log("pendingAmount: " + pendingAmount);
-    console.log("available: " + available);
+    const available = Math.max(0, qrBalance - pendingAmount);
     return {
       total_earned: totalEarned.toFixed(2),
       pending_withdrawals_amount: pendingAmount.toFixed(2),

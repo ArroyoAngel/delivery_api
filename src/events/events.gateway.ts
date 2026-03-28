@@ -26,4 +26,12 @@ export class EventsGateway {
   emitCreditRejected(purchaseId: string, reason?: string) {
     this.server.emit(`credit:rejected:${purchaseId}`, { reason: reason ?? null });
   }
+
+  emitRiderOrderDelivered(accountId: string) {
+    this.server.emit(`rider:order_delivered:${accountId}`, {});
+  }
+
+  emitOrderUpdated() {
+    this.server.emit('order:updated', {});
+  }
 }

@@ -104,6 +104,13 @@ export class OrdersController {
     return this.orders.findShopOrders(req.user.id);
   }
 
+  @Get('shop/local/area-kind-options')
+  @UseGuards(CasbinGuard)
+  @ApiOperation({ summary: 'Tipos de zona disponibles para este negocio (globales + propios)' })
+  shopAreaKindOptions(@Request() req) {
+    return this.orders.getShopAreaKindOptions(req.user.id);
+  }
+
   @Get('shop/local/areas')
   @UseGuards(CasbinGuard)
   @ApiOperation({ summary: 'Áreas/mesas para servicio en local' })
@@ -113,12 +120,29 @@ export class OrdersController {
 
   @Post('shop/local/areas')
   @UseGuards(CasbinGuard)
-  @ApiOperation({ summary: 'Crear área/mesa para servicio en local' })
+  @ApiOperation({ summary: 'Crear área/mesa para servicio en local (resuelve negocio del requester)' })
   createShopLocalArea(
     @Request() req,
     @Body() dto: CreateRestaurantServiceAreaDto,
   ) {
     return this.orders.createShopServiceArea(req.user.id, dto);
+  }
+
+  @Get('shop/:shopId/local/areas')
+  @UseGuards(CasbinGuard)
+  @ApiOperation({ summary: 'Áreas/mesas de un negocio específico por ID' })
+  shopAreasByShopId(@Param('shopId') shopId: string) {
+    return this.orders.getShopServiceAreasByShopId(shopId);
+  }
+
+  @Post('shop/:shopId/local/areas')
+  @UseGuards(CasbinGuard)
+  @ApiOperation({ summary: 'Crear área/mesa en un negocio específico por ID' })
+  createAreaForShop(
+    @Param('shopId') shopId: string,
+    @Body() dto: CreateRestaurantServiceAreaDto,
+  ) {
+    return this.orders.createShopServiceAreaForShop(shopId, dto);
   }
 
   @Post('shop/local/cash')
@@ -156,6 +180,14 @@ export class OrdersController {
   @ApiOperation({ summary: 'Confirmar recogida del negocio — rider' })
   markOnTheWay(@Request() req: any, @Param('id') id: string) {
     return this.groups.markOrderPickedUp(req.user.id, id);
+  }
+
+  // ── Estado: preparando → entregado (negocio entrega en mesa/local, sin rider) ──
+  @Put(':id/deliver')
+  @UseGuards(CasbinGuard)
+  @ApiOperation({ summary: 'Marcar pedido entregado en local — negocio (consumo en mesa)' })
+  markDeliverLocal(@Request() req: any, @Param('id') id: string) {
+    return this.groups.markLocalOrderDelivered(id, req.user.id);
   }
 
   // ── Estado: en_camino → entregado (rider entregó al cliente) ─────────────

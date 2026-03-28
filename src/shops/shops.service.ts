@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, ILike } from 'typeorm';
 import { ShopEntity } from './entities/shop.entity';
+import { BusinessTypeEntity } from './entities/business-type.entity';
 import { ShopStaffPermission } from './shop-staff-permission.enum';
 import { EventsGateway } from '../events/events.gateway';
 
@@ -14,9 +15,49 @@ export class ShopsService {
   constructor(
     @InjectRepository(ShopEntity)
     private shops: Repository<ShopEntity>,
+    @InjectRepository(BusinessTypeEntity)
+    private businessTypes: Repository<BusinessTypeEntity>,
     private dataSource: DataSource,
     private events: EventsGateway,
   ) {}
+
+  async getBusinessTypes() {
+    return this.businessTypes.find({ order: { sortOrder: 'ASC' } });
+  }
+
+  async getAreaKindOptions() {
+    return this.dataSource.query(
+      `SELECT value, label, type, web_icon AS "webIcon", color, sort_order AS "sortOrder"
+       FROM area_kind_options
+       WHERE shop_id IS NULL
+       ORDER BY sort_order`,
+    );
+  }
+
+  async create(dto: {
+    name: string;
+    address: string;
+    description?: string;
+    businessType?: string;
+    ownerAccountId?: string;
+    deliveryTimeMin?: number;
+    minimumOrder?: number;
+    latitude?: number;
+    longitude?: number;
+  }) {
+    const shop = this.shops.create({
+      name: dto.name,
+      address: dto.address,
+      description: dto.description,
+      businessType: dto.businessType ?? 'restaurant',
+      ownerAccountId: dto.ownerAccountId,
+      deliveryTimeMin: dto.deliveryTimeMin ?? 30,
+      minimumOrder: dto.minimumOrder ?? 0,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+    });
+    return this.shops.save(shop);
+  }
 
   async findAll(search?: string, categoryId?: string, businessType?: string) {
     const where: any = { isOpen: true };
@@ -259,25 +300,29 @@ export class ShopsService {
   // ── helpers ───────────────────────────────────────────────────────────────
 
   private async attachMenu(shop: ShopEntity) {
-    const menuCategories = await this.dataSource.query(
-      `SELECT mc.id, mc.name, mc.sort_order AS "sortOrder",
-          json_agg(
-            json_build_object(
-              'id', mi.id, 'name', mi.name, 'description', mi.description,
-              'price', mi.price, 'imageUrl', mi.image_url,
-              'isAvailable', mi.is_available, 'stock', mi.stock,
-              'dailyLimit', mi.daily_limit, 'dailySold', mi.daily_sold,
-              'categoryId', mi.category_id
-            ) ORDER BY mi.name
-          ) FILTER (WHERE mi.id IS NOT NULL) AS items
-       FROM menu_categories mc
-       LEFT JOIN menu_items mi ON mi.category_id = mc.id
-       WHERE mc.shop_id = $1
-       GROUP BY mc.id ORDER BY mc.sort_order`,
-      [shop.id],
-    );
+    const [menuCategories, businessType] = await Promise.all([
+      this.dataSource.query(
+        `SELECT mc.id, mc.name, mc.sort_order AS "sortOrder",
+            json_agg(
+              json_build_object(
+                'id', mi.id, 'name', mi.name, 'description', mi.description,
+                'price', mi.price, 'imageUrl', mi.image_url,
+                'isAvailable', mi.is_available, 'stock', mi.stock,
+                'dailyLimit', mi.daily_limit, 'dailySold', mi.daily_sold,
+                'categoryId', mi.category_id
+              ) ORDER BY mi.name
+            ) FILTER (WHERE mi.id IS NOT NULL) AS items
+         FROM menu_categories mc
+         LEFT JOIN menu_items mi ON mi.category_id = mc.id
+         WHERE mc.shop_id = $1
+         GROUP BY mc.id ORDER BY mc.sort_order`,
+        [shop.id],
+      ),
+      this.businessTypes.findOne({ where: { value: shop.businessType } }),
+    ]);
     return {
       ...shop,
+      serviceCategory: businessType?.serviceCategory ?? 'food',
       menuCategories: menuCategories.map((c: any) => ({
         ...c,
         items: c.items ?? [],

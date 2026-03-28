@@ -22,6 +22,7 @@ import { SupportModule } from './support/support.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { CreditsModule } from './credits/credits.module';
 import { RatingsModule } from './ratings/ratings.module';
+import { FirebaseStorageModule } from './firebase-storage/firebase-storage.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuthZModule, AUTHZ_ENFORCER } from 'nest-authz';
 import TypeORMAdapter from 'typeorm-adapter';
@@ -110,6 +111,7 @@ m = r.sub == p.sub && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act) && p.e
     CouponsModule,
     CreditsModule,
     RatingsModule,
+    FirebaseStorageModule,
   ],
   controllers: [AppController],
   providers: [AppService],

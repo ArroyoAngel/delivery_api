@@ -2,18 +2,24 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { join } from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.setGlobalPrefix('api');
-  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
-  const allowedOrigins = process.env.CORS_ORIGIN
+  const whitelist = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
-    : true; // true = reflect request origin (allow all) — solo para desarrollo
-  app.enableCors({ origin: allowedOrigins, credentials: true });
+    : [];
+  app.enableCors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (whitelist.length === 0) return callback(null, true);
+      if (whitelist.includes(origin)) return callback(null, true);
+      callback(new Error(`CORS: origen no permitido — ${origin}`));
+    },
+    credentials: true,
+  });
 
   const config = new DocumentBuilder()
     .setTitle('YaYa Eats API')

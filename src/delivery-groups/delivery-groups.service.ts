@@ -209,10 +209,16 @@ export class DeliveryGroupsService {
     return this.dataSource.query(`
       SELECT
         r.id,
-        r.vehicle_type  AS "vehicleType",
-        r.is_available  AS "isAvailable",
+        a.id               AS "accountId",
+        r.vehicle_type     AS "vehicleType",
+        r.is_available     AS "isAvailable",
         r.lat, r.lng,
-        r.created_at    AS "createdAt",
+        r.created_at       AS "createdAt",
+        r.license_front_url AS "licenseFrontUrl",
+        r.license_back_url  AS "licenseBackUrl",
+        r.plate,
+        r.policy_url       AS "policyUrl",
+        r.vin,
         p.first_name    AS "firstName",
         p.last_name     AS "lastName",
         p.phone,
@@ -468,6 +474,9 @@ export class DeliveryGroupsService {
       }
     }
 
+    // Notificar al rider para que actualice sus stats del día
+    this.events.emitRiderOrderDelivered(accountId);
+
     return { id: orderId, status: 'entregado' };
   }
 
@@ -534,6 +543,31 @@ export class DeliveryGroupsService {
         .catch(() => null);
     }
     return { id: orderId, status: 'listo', groupsCreated: newGroups.length };
+  }
+
+  // ── Estado: preparando → entregado (negocio entrega en mesa, sin rider) ──────
+  async markLocalOrderDelivered(orderId: string, accountId: string) {
+    await this.assertShopOrderManageAccess(orderId, accountId);
+    const order = await this.orders.findOne({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Orden no encontrada');
+    if (order.status !== 'preparando') {
+      throw new ForbiddenException(
+        `Solo se puede entregar desde estado 'preparando' (estado actual: ${order.status})`,
+      );
+    }
+    const isPortalOrder =
+      order.deliveryAddress?.startsWith('Consumo en local') ||
+      order.deliveryAddress === 'Recojo en tienda';
+    if (!isPortalOrder) {
+      throw new ForbiddenException(
+        'Este endpoint es solo para pedidos registrados desde el portal (consumo en local o recojo en tienda)',
+      );
+    }
+    await this.orders.update(orderId, { status: 'entregado' });
+    this.notifications
+      .notifyClientOrderStatus(order.clientId, 'entregado')
+      .catch(() => null);
+    return { id: orderId, status: 'entregado' };
   }
 
   @Cron(CronExpression.EVERY_MINUTE)

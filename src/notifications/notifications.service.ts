@@ -37,6 +37,7 @@ export class NotificationsService implements OnModuleInit {
           clientEmail,
           privateKey,
         }),
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
       });
       this.logger.log('Firebase Admin initialized ✓');
     } catch (e) {
