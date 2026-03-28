@@ -3,9 +3,12 @@ import {
   Post,
   Get,
   Patch,
+  Delete,
   Body,
   UseGuards,
   Request,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
@@ -80,6 +83,29 @@ export class AuthController {
   @ApiOperation({ summary: 'Mi perfil' })
   me(@Request() req) {
     return this.auth.me(req.user.id);
+  }
+
+  @Post('reset-password/send-otp')
+  @ApiOperation({ summary: 'Paso 1 reset: enviar código al email' })
+  sendResetOtp(@Body() body: { email: string }) {
+    return this.auth.sendPasswordResetOtp(body.email).then(() => ({ sent: true }));
+  }
+
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Paso 2 reset: verificar código y cambiar contraseña' })
+  resetPassword(
+    @Body() body: { email: string; code: string; newPassword: string },
+  ) {
+    return this.auth.resetPassword(body).then(() => ({ ok: true }));
+  }
+
+  @Delete('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Eliminar mi cuenta y todos mis datos' })
+  deleteMe(@Request() req) {
+    return this.auth.deleteMyAccount(req.user.id);
   }
 
   @Get('frontend-access')

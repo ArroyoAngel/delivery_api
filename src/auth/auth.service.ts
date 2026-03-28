@@ -410,6 +410,97 @@ export class AuthService {
     return [...routes];
   }
 
+  async sendPasswordResetOtp(email: string): Promise<void> {
+    const account = await this.accounts.findOne({ where: { email } });
+    if (!account) {
+      // No revelar si el email existe o no (seguridad)
+      return;
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await this.dataSource.query(
+      `UPDATE email_otps SET used = true WHERE email = $1 AND used = false`,
+      [email],
+    );
+    await this.dataSource.query(
+      `INSERT INTO email_otps (email, code, expires_at) VALUES ($1, $2, $3)`,
+      [email, code, expiresAt],
+    );
+
+    if (!this.resend) {
+      throw new BadRequestException('El servicio de email no está configurado en el servidor');
+    }
+    const fromEmail = this.config.get('RESEND_FROM_EMAIL', 'onboarding@resend.dev');
+    const { error } = await this.resend.emails.send({
+      from: fromEmail,
+      to: email,
+      subject: 'Recuperar contraseña — YaYa Eats',
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px">
+          <h2 style="color:#f97316;margin-bottom:8px">YaYa Eats</h2>
+          <p style="color:#444;margin-bottom:24px">Tu código para restablecer la contraseña es:</p>
+          <div style="background:#fff7ed;border:2px solid #f97316;border-radius:12px;padding:24px;text-align:center">
+            <span style="font-size:40px;font-weight:700;letter-spacing:12px;color:#f97316">${code}</span>
+          </div>
+          <p style="color:#666;font-size:13px;margin-top:20px">
+            Válido por <strong>10 minutos</strong>. Si no solicitaste esto, ignora este correo.
+          </p>
+        </div>
+      `,
+    });
+
+    if (error) {
+      await this.dataSource.query(
+        `UPDATE email_otps SET used = true WHERE email = $1 AND used = false`,
+        [email],
+      );
+      throw new BadRequestException(`No se pudo enviar el email: ${error.message}`);
+    }
+  }
+
+  async resetPassword(params: { email: string; code: string; newPassword: string }): Promise<void> {
+    const row = await this.dataSource.query(
+      `SELECT * FROM email_otps
+       WHERE email = $1 AND code = $2 AND used = false AND expires_at > now()
+       ORDER BY created_at DESC LIMIT 1`,
+      [params.email, params.code],
+    );
+
+    if (!row.length) {
+      throw new BadRequestException('Código incorrecto o expirado');
+    }
+
+    await this.dataSource.query(
+      `UPDATE email_otps SET used = true WHERE id = $1`,
+      [row[0].id],
+    );
+
+    const account = await this.accounts.findOne({ where: { email: params.email } });
+    if (!account) throw new BadRequestException('Usuario no encontrado');
+
+    await this.accounts.update(account.id, { password: params.newPassword });
+  }
+
+  async deleteMyAccount(accountId: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      // Notificaciones push
+      await manager.query(`DELETE FROM device_tokens WHERE user_id = $1`, [accountId]);
+      // Tickets de soporte
+      await manager.query(`UPDATE support_tickets SET account_id = NULL WHERE account_id = $1`, [accountId]);
+      // Direcciones guardadas
+      await manager.query(`DELETE FROM user_addresses WHERE account_id = $1`, [accountId]);
+      // Registros de rol asociados al perfil
+      await manager.query(`DELETE FROM clients  WHERE profile_id IN (SELECT id FROM profiles WHERE account_id = $1)`, [accountId]);
+      await manager.query(`DELETE FROM riders   WHERE profile_id IN (SELECT id FROM profiles WHERE account_id = $1)`, [accountId]);
+      await manager.query(`DELETE FROM admins   WHERE profile_id IN (SELECT id FROM profiles WHERE account_id = $1)`, [accountId]);
+      // Perfil y cuenta
+      await manager.query(`DELETE FROM profiles WHERE account_id = $1`, [accountId]);
+      await manager.query(`DELETE FROM accounts WHERE id = $1`, [accountId]);
+    });
+  }
+
   async me(accountId: string) {
     const account = await this.accounts.findOne({
       where: { id: accountId },

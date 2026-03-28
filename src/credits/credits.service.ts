@@ -6,12 +6,13 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, In } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { CreditPackageEntity } from './entities/credit-package.entity';
 import { CreditPurchaseEntity } from './entities/credit-purchase.entity';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { BnbService } from '../bnb/bnb.service';
 import { EventsGateway } from '../events/events.gateway';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class CreditsService {
@@ -26,6 +27,7 @@ export class CreditsService {
     private cfg: SystemConfigService,
     private bnb: BnbService,
     private events: EventsGateway,
+    private notifications: NotificationsService,
   ) {}
 
   private async resolveRiderId(accountId: string): Promise<string | null> {
@@ -83,7 +85,7 @@ export class CreditsService {
 
   async updatePackage(
     id: string,
-    dto: Partial<{ name: string; credits: number; bonusCredits: number; price: number; isActive: boolean; sortOrder: number }>,
+    dto: Partial<{ name: string; credits: number; bonusCredits: number; price: number; isActive: boolean; sortOrder: number; qrImageUrl: string | null }>,
   ) {
     const pkg = await this.packages.findOne({ where: { id } });
     if (!pkg) throw new NotFoundException('Paquete no encontrado');
@@ -91,6 +93,13 @@ export class CreditsService {
     if (dto.price !== undefined) {
       pkg.qrData = await this.buildQrData(dto.price);
     }
+    return this.packages.save(pkg);
+  }
+
+  async setPackageQrImage(id: string, qrImageUrl: string | null) {
+    const pkg = await this.packages.findOne({ where: { id } });
+    if (!pkg) throw new NotFoundException('Paquete no encontrado');
+    pkg.qrImageUrl = qrImageUrl;
     return this.packages.save(pkg);
   }
 
@@ -141,8 +150,8 @@ export class CreditsService {
     const shortId = crypto.randomUUID().replace(/-/g, '').toUpperCase().slice(0, 6);
     const reference = `${riderCode}-${shortId}`;
 
-    // Si hay QR estático configurado, usarlo en lugar de BNB dinámico
-    const staticQrUrl = (await this.cfg.get('platform_qr_image_url')) || null;
+    // QR estático: usar el del paquete si tiene, si no el general de la plataforma
+    const staticQrUrl = pkg.qrImageUrl || (await this.cfg.get('platform_qr_image_url')) || null;
 
     let bnbQrId: string | null = null;
     let bnbQrImage: string | null = null;
@@ -265,6 +274,7 @@ export class CreditsService {
       rejectionReason: reason ?? null,
     });
     this.events.emitCreditRejected(purchase.id, reason);
+    this.notifications.notifyRiderCreditRejected(purchase.riderId, reason).catch(() => {});
     return { message: 'Compra rechazada' };
   }
 

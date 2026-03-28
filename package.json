@@ -61,7 +61,7 @@
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.3",
     "swagger-ui-express": "^5.0.1",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^2.0.0",
     "typeorm": "^0.3.28",
     "typeorm-adapter": "^1.9.0"
   },

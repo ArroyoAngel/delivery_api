@@ -216,6 +216,8 @@ export class CasbinRules0000000000002 implements MigrationInterface {
       [SA, '/api/credits/admin/confirm/:reference',  'POST', BE],
       [SA, '/api/credits/admin/refresh-qr',          'POST', BE],
       [SA, '/api/credits/admin/reject/:reference',   'POST', BE],
+      [SA, '/api/credits/packages/:id/qr-image',     'POST', BE],
+      [SA, '/api/credits/packages/:id/qr-image',     'DELETE', BE],
 
       // ── RATINGS ───────────────────────────────────────────────────────────
       [CL, '/api/ratings',             'POST', BE],

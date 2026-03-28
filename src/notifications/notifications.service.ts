@@ -221,6 +221,24 @@ export class NotificationsService implements OnModuleInit {
     });
   }
 
+  /** Notifica al rider que su compra de créditos fue rechazada */
+  async notifyRiderCreditRejected(riderId: string, reason?: string) {
+    const rows: { account_id: string }[] = await this.dataSource.query(
+      `SELECT p.account_id FROM riders r JOIN profiles p ON p.id = r.profile_id WHERE r.id = $1`,
+      [riderId],
+    );
+    if (!rows.length) return;
+    const accountId = rows[0].account_id;
+    const n = {
+      title: '❌ Compra de créditos rechazada',
+      body: reason?.trim()
+        ? `Tu compra fue rechazada: ${reason}`
+        : 'Tu compra de créditos fue rechazada. Contactá a soporte si tenés dudas.',
+    };
+    await this._saveForUsers([accountId], n, 'credit_rejected', { reason: reason ?? '' });
+    await this.sendToUser(accountId, n, { type: 'credit_rejected', reason: reason ?? '' });
+  }
+
   // ── Internal helpers ───────────────────────────────────────────────────
 
   private async _saveForUsers(

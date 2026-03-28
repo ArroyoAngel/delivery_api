@@ -70,6 +70,32 @@ export class CreditsController {
     return this.service.updatePackage(id, body);
   }
 
+  @Post('packages/:id/qr-image')
+  @ApiOperation({ summary: 'Subir imagen QR para un paquete (superadmin)' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        cb(null, /\.(jpg|jpeg|png|webp)$/i.test(file.originalname));
+      },
+    }),
+  )
+  async uploadPackageQrImage(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    const qrImageUrl = file ? await this.storage.upload(file, 'credits/qr') : null;
+    return this.service.setPackageQrImage(id, qrImageUrl);
+  }
+
+  @Delete('packages/:id/qr-image')
+  @ApiOperation({ summary: 'Eliminar imagen QR de un paquete (superadmin)' })
+  removePackageQrImage(@Param('id') id: string) {
+    return this.service.setPackageQrImage(id, null);
+  }
+
   // ── Compra (rider) ────────────────────────────────────────────────────────
 
   @Post('packages/:id/claim')

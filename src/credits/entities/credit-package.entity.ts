@@ -10,5 +10,6 @@ export class CreditPackageEntity {
   @Column({ name: 'is_active', default: true }) isActive: boolean;
   @Column({ name: 'sort_order', type: 'int', default: 0 }) sortOrder: number;
   @Column({ name: 'qr_data', type: 'text', nullable: true }) qrData: string | null;
+  @Column({ name: 'qr_image_url', type: 'text', nullable: true }) qrImageUrl: string | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
 }

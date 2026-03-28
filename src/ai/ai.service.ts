@@ -146,9 +146,11 @@ export class AiService {
   }
 
   private async loadRoleConfig(role: RoleKey): Promise<RoleConfig> {
-    const defaultModel = this.config.get<string>('ANTHROPIC_API_KEY')
-      ? this.config.get<string>('ANTHROPIC_MODEL', 'claude-haiku-4-5-20251001')
-      : this.config.get<string>('OWUI_MODEL', 'llama3.1:8b');
+    const defaultModel = this.config.get<string>('KIMI_API_KEY')
+      ? this.config.get<string>('KIMI_MODEL', 'kimi-k2.5')
+      : this.config.get<string>('ANTHROPIC_API_KEY')
+        ? this.config.get<string>('ANTHROPIC_MODEL', 'claude-haiku-4-5-20251001')
+        : this.config.get<string>('OWUI_MODEL', 'llama3.1:8b');
 
     const model = String(
       (await this.systemConfig.get(`ai_model_${role}`)) ?? defaultModel,
@@ -214,13 +216,24 @@ export class AiService {
     const clientCtx = ctx.clientContextBlock ? `${ctx.clientContextBlock}\n\n` : '';
     const systemContent = `${contextBlock}\n\n${profileCtx}${clientCtx}${roleCfg.prompt}`;
 
+    const kimiKey = this.config.get<string>('KIMI_API_KEY', '');
     const anthropicKey = this.config.get<string>('ANTHROPIC_API_KEY', '');
-    const useAnthropic = !!anthropicKey;
 
     let reply: string;
 
-    console.log(`[AI] Proveedor: ${useAnthropic ? 'Claude (Anthropic)' : 'OWUI'} | Modelo: ${roleCfg.model}`);
-    if (useAnthropic) {
+    if (kimiKey) {
+      console.log(`[AI] Proveedor: Kimi (Moonshot) | Modelo: ${roleCfg.model}`);
+      reply = await this._callKimi({
+        apiKey: kimiKey,
+        model: roleCfg.model,
+        temperature: roleCfg.temperature,
+        systemContent,
+        messages: params.messages,
+        userId: params.userId,
+        role,
+      });
+    } else if (anthropicKey) {
+      console.log(`[AI] Proveedor: Claude (Anthropic) | Modelo: ${roleCfg.model}`);
       reply = await this._callClaude({
         apiKey: anthropicKey,
         model: roleCfg.model,
@@ -234,6 +247,7 @@ export class AiService {
       if (!apiKey) {
         throw new BadGatewayException('OWUI_API_KEY no configurada en el servidor');
       }
+      console.log(`[AI] Proveedor: OWUI | Modelo: ${roleCfg.model}`);
       reply = await this._callOwui({
         baseUrl,
         apiKey,
@@ -250,6 +264,143 @@ export class AiService {
   }
 
   // ── Proveedores ────────────────────────────────────────────────────────────
+
+  /** Convierte tools de formato Claude (input_schema) a formato OpenAI (parameters) */
+  private _toOpenAiTools(tools: any[]): any[] {
+    return tools.map((t) => ({
+      type: 'function',
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.input_schema,
+      },
+    }));
+  }
+
+  private async _callKimi(p: {
+    apiKey: string;
+    model: string;
+    temperature: number;
+    systemContent: string;
+    messages: ChatMessageDto[];
+    userId: string;
+    role: RoleKey;
+  }): Promise<string> {
+    const tools = TOOLS_BY_ROLE[p.role] ?? [];
+    const openAiTools = this._toOpenAiTools(tools);
+
+    const messages: any[] = [
+      { role: 'system', content: p.systemContent },
+      ...p.messages.map((m) => ({
+        role: m.role === 'system' ? 'user' : m.role,
+        content: m.role === 'system' ? `[sistema]: ${m.content}` : m.content,
+      })),
+    ];
+
+    let lastCreateOrderResult: { orderId: string; total: number; paymentReference: string | null; shopName?: string } | null = null;
+
+    for (let turn = 0; turn < 10; turn++) {
+      const payload: any = {
+        model: p.model,
+        max_tokens: 1024,
+        temperature: p.temperature,
+        messages,
+      };
+      if (openAiTools.length) payload.tools = openAiTools;
+
+      const res = await fetch('https://api.moonshot.cn/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${p.apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new BadGatewayException(`Kimi error ${res.status}: ${text}`);
+      }
+
+      const data = (await res.json()) as {
+        choices: Array<{
+          finish_reason: string;
+          message: {
+            role: string;
+            content: string | null;
+            tool_calls?: Array<{
+              id: string;
+              function: { name: string; arguments: string };
+            }>;
+          };
+        }>;
+      };
+
+      const choice = data.choices[0];
+
+      if (!choice.message.tool_calls?.length) {
+        const reply = choice.message.content?.trim();
+        if (!reply) throw new BadGatewayException('Kimi no devolvió contenido');
+
+        // Mismo fallback __ACTION__ que Claude
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const actionHasRealOrderId = (() => {
+          if (!reply.includes('__ACTION__')) return false;
+          try {
+            const m = reply.match(/__ACTION__:(\{.+\})\s*$/);
+            if (!m) return false;
+            return UUID_RE.test(JSON.parse(m[1])?.orderId ?? '');
+          } catch { return false; }
+        })();
+        if (lastCreateOrderResult && !actionHasRealOrderId) {
+          const { orderId, total, paymentReference, shopName } = lastCreateOrderResult;
+          const action = JSON.stringify({
+            type: 'OPEN_PAYMENT',
+            orderId,
+            total,
+            paymentReference: paymentReference ?? null,
+            shopName: shopName ?? 'YaYa Eats',
+          });
+          console.warn(`[AI] Kimi fallback: inyectando orderId real=${orderId}`);
+          return `${reply.replace(/__ACTION__:\{.+\}\s*$/, '').trim()}\n__ACTION__:${action}`;
+        }
+
+        return reply;
+      }
+
+      // Kimi quiere usar herramientas — ejecutarlas y devolver resultados
+      messages.push({
+        role: 'assistant',
+        content: choice.message.content ?? null,
+        tool_calls: choice.message.tool_calls,
+      });
+
+      const toolResults = await Promise.all(
+        choice.message.tool_calls.map(async (tc) => {
+          let input: Record<string, any> = {};
+          try { input = JSON.parse(tc.function.arguments); } catch {}
+          const result = await this.toolsService.execute(tc.function.name, input, p.userId, [p.role]);
+          if (tc.function.name === 'create_order' && (result as any)?.success && (result as any)?.orderId) {
+            lastCreateOrderResult = {
+              orderId: (result as any).orderId,
+              total: (result as any).total ?? 0,
+              paymentReference: (result as any).paymentReference ?? null,
+              shopName: (result as any).shopName ?? 'YaYa Eats',
+            };
+          }
+          return {
+            role: 'tool' as const,
+            tool_call_id: tc.id,
+            content: JSON.stringify(result),
+          };
+        }),
+      );
+
+      messages.push(...toolResults);
+    }
+
+    throw new BadGatewayException('Se excedió el límite de turnos de herramientas (Kimi)');
+  }
 
   private async _callClaude(p: {
     apiKey: string;

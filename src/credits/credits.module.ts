@@ -8,6 +8,7 @@ import { CreditPollingService } from './credit-polling.service';
 import { SystemConfigModule } from '../system-config/system-config.module';
 import { BnbModule } from '../bnb/bnb.module';
 import { EventsModule } from '../events/events.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { EventsModule } from '../events/events.module';
     SystemConfigModule,
     BnbModule,
     EventsModule,
+    NotificationsModule,
   ],
   controllers: [CreditsController],
   providers: [CreditsService, CreditPollingService],
