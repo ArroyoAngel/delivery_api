@@ -198,8 +198,10 @@ export class ShopsController {
     @Param('id') id: string,
     @Param('itemId') itemId: string,
     @Body() body: any,
+    @Request() req: any,
   ) {
-    return this.shops.updateMenuItem(id, itemId, body);
+    const isSuperAdmin: boolean = req.user.roles?.includes('superadmin');
+    return this.shops.updateMenuItem(id, itemId, body, req.user.id, isSuperAdmin);
   }
 
   // ── Personal del negocio ──────────────────────────────────────────────────

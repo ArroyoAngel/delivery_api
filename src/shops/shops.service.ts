@@ -199,7 +199,12 @@ export class ShopsService {
       stock: number | null;
       dailyLimit: number | null;
     }>,
+    requesterAccountId?: string,
+    isSuperAdmin?: boolean,
   ) {
+    if (!isSuperAdmin && requesterAccountId) {
+      await this.assertShopAccess(shopId, requesterAccountId, ShopStaffPermission.MANAGE_MENU);
+    }
     const [item] = await this.dataSource.query(
       'SELECT * FROM menu_items WHERE id = $1 AND shop_id = $2',
       [itemId, shopId],
