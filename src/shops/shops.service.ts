@@ -9,6 +9,7 @@ import { ShopEntity } from './entities/shop.entity';
 import { BusinessTypeEntity } from './entities/business-type.entity';
 import { ShopStaffPermission } from './shop-staff-permission.enum';
 import { EventsGateway } from '../events/events.gateway';
+import { ZonesService } from '../zones/zones.service';
 
 @Injectable()
 export class ShopsService {
@@ -19,6 +20,7 @@ export class ShopsService {
     private businessTypes: Repository<BusinessTypeEntity>,
     private dataSource: DataSource,
     private events: EventsGateway,
+    private zones: ZonesService,
   ) {}
 
   async getBusinessTypes() {
@@ -45,6 +47,18 @@ export class ShopsService {
     latitude?: number;
     longitude?: number;
   }) {
+    let zoneId: string | null = null;
+    let outsideZone = false;
+
+    if (dto.latitude != null && dto.longitude != null) {
+      const zone = await this.zones.detect(dto.latitude, dto.longitude);
+      if (zone) {
+        zoneId = zone.id;
+      } else {
+        outsideZone = true;
+      }
+    }
+
     const shop = this.shops.create({
       name: dto.name,
       address: dto.address,
@@ -55,8 +69,10 @@ export class ShopsService {
       minimumOrder: dto.minimumOrder ?? 0,
       latitude: dto.latitude,
       longitude: dto.longitude,
+      zoneId,
     });
-    return this.shops.save(shop);
+    const saved = await this.shops.save(shop);
+    return { ...saved, outsideZone };
   }
 
   async findAll(search?: string, categoryId?: string, businessType?: string) {

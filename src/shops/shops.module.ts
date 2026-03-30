@@ -10,6 +10,7 @@ import { ShopScheduleEntity } from './entities/shop-schedule.entity';
 import { BusinessTypeEntity } from './entities/business-type.entity';
 import { AuthModule } from '../auth/auth.module';
 import { EventsModule } from '../events/events.module';
+import { ZonesModule } from '../zones/zones.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { EventsModule } from '../events/events.module';
     ]),
     AuthModule,
     EventsModule,
+    ZonesModule,
   ],
   controllers: [ShopsController],
   providers: [

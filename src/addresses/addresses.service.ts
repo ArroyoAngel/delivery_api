@@ -3,12 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AddressEntity } from './entities/address.entity';
 import { CreateAddressDto } from './dto/create-address.dto';
+import { ZonesService } from '../zones/zones.service';
 
 @Injectable()
 export class AddressesService {
   constructor(
     @InjectRepository(AddressEntity)
     private addresses: Repository<AddressEntity>,
+    private zones: ZonesService,
   ) {}
 
   findAll(accountId: string) {
@@ -23,7 +25,15 @@ export class AddressesService {
       await this.addresses.update({ accountId }, { isDefault: false });
     }
     const address = this.addresses.create({ ...dto, accountId });
-    return this.addresses.save(address);
+    const saved = await this.addresses.save(address);
+
+    let outsideZone = false;
+    if (dto.latitude != null && dto.longitude != null) {
+      const zone = await this.zones.detect(dto.latitude, dto.longitude);
+      if (!zone) outsideZone = true;
+    }
+
+    return { ...saved, outsideZone };
   }
 
   async update(accountId: string, id: string, dto: Partial<CreateAddressDto>) {

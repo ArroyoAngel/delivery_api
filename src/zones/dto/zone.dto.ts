@@ -1,17 +1,19 @@
+import { IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
+
 export class CreateZoneDto {
-  name: string;
-  city: string;
-  centerLat: number;
-  centerLng: number;
-  radiusMeters?: number;
-  isActive?: boolean;
+  @IsString() name: string;
+  @IsString() city: string;
+  @IsNumber() centerLat: number;
+  @IsNumber() centerLng: number;
+  @IsOptional() @IsNumber() radiusMeters?: number;
+  @IsOptional() @IsBoolean() isActive?: boolean;
 }
 
 export class UpdateZoneDto {
-  name?: string;
-  city?: string;
-  centerLat?: number;
-  centerLng?: number;
-  radiusMeters?: number;
-  isActive?: boolean;
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString() city?: string;
+  @IsOptional() @IsNumber() centerLat?: number;
+  @IsOptional() @IsNumber() centerLng?: number;
+  @IsOptional() @IsNumber() radiusMeters?: number;
+  @IsOptional() @IsBoolean() isActive?: boolean;
 }

@@ -96,12 +96,31 @@ curl https://api.yaya.work/api/restaurants
 
 ### Variables de entorno en QA
 
-Las variables de entorno del API en QA se definen directamente en el `docker-compose.yml` del servidor. Para cambiarlas:
+El API lee las variables desde el archivo `.env` ubicado en `/opt/yaya-eats/delivery_api/.env` en el servidor.
+
+#### Actualizar una variable (ej: RESEND_API_KEY)
 
 ```bash
-nano /opt/yaya-eats/docker-compose.yml
+# 1. Conectarse al servidor
+ssh root@85.31.62.55
+
+# 2. Editar el .env
+nano /opt/yaya-eats/delivery_api/.env
+
+# 3. Hacer el cambio (ej: pegar la nueva API key de Resend)
+#    RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxx
+#    Guardar: Ctrl+O → Enter → Ctrl+X
+
+# 4. Reiniciar solo el contenedor del API (sin rebuild)
+cd /opt/yaya-eats
 docker compose up -d api
+
+# 5. Verificar que arrancó sin errores
+docker compose logs api --tail=30
 ```
+
+> **Nota:** No hace falta rebuild (`docker compose build`) para cambios en `.env`.
+> El rebuild solo es necesario cuando cambia el código fuente.
 
 ---
 
