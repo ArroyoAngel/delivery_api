@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AddressEntity } from './entities/address.entity';
@@ -21,19 +25,22 @@ export class AddressesService {
   }
 
   async create(accountId: string, dto: CreateAddressDto) {
+    if (dto.latitude != null && dto.longitude != null) {
+      const zone = await this.zones.detect(dto.latitude, dto.longitude);
+      if (!zone) {
+        throw new BadRequestException(
+          'La dirección está fuera del área de cobertura',
+        );
+      }
+    }
+
     if (dto.isDefault) {
       await this.addresses.update({ accountId }, { isDefault: false });
     }
     const address = this.addresses.create({ ...dto, accountId });
     const saved = await this.addresses.save(address);
 
-    let outsideZone = false;
-    if (dto.latitude != null && dto.longitude != null) {
-      const zone = await this.zones.detect(dto.latitude, dto.longitude);
-      if (!zone) outsideZone = true;
-    }
-
-    return { ...saved, outsideZone };
+    return saved;
   }
 
   async update(accountId: string, id: string, dto: Partial<CreateAddressDto>) {

@@ -345,6 +345,9 @@ export class DeliveryGroupsService {
     if (!riderId)
       throw new ForbiddenException('No estás registrado como repartidor');
 
+    console.log('[acceptGroup] ========================================');
+    console.log('[acceptGroup] Rider aceptando grupo. riderId:', riderId, 'groupId:', groupId);
+
     // Verificar que el rider tiene créditos disponibles
     const [credits] = await this.dataSource.query(
       `SELECT balance FROM rider_credits WHERE rider_id = $1`,
@@ -373,6 +376,40 @@ export class DeliveryGroupsService {
       `UPDATE orders SET rider_id = $1 WHERE group_id = $2`,
       [riderId, groupId],
     );
+
+    // ── Transferir dinero pending_assignment a la wallet del rider ──
+    console.log('[acceptGroup] 💰 Buscando wallet_transactions con status=pending_assignment...');
+    const pendingTransactions = await this.dataSource.query(
+      `SELECT id, payment_id, order_id, amount
+       FROM wallet_transactions
+       WHERE order_id IN (SELECT id FROM orders WHERE group_id = $1)
+       AND status = 'pending_assignment'`,
+      [groupId],
+    );
+    console.log('[acceptGroup] 📋 Transactions pendientes encontradas:', pendingTransactions.length, pendingTransactions);
+
+    if (pendingTransactions.length > 0) {
+      let totalAmount = 0;
+      for (const tx of pendingTransactions) {
+        totalAmount += Number(tx.amount);
+
+        // Actualizar la transacción pending_assignment a confirmed con owner_id del rider
+        await this.dataSource.query(
+          `UPDATE wallet_transactions
+           SET owner_id = $1, status = 'confirmed'
+           WHERE id = $2`,
+          [riderId, tx.id],
+        );
+        console.log('[acceptGroup] ✓ Transaction actualizada:', tx.id, 'owner_id=', riderId, 'status=confirmed');
+      }
+
+      console.log('[acceptGroup] 💵 Total transferido al rider:', totalAmount);
+      console.log('[acceptGroup] ✓ Dinero transferido exitosamente');
+    } else {
+      console.log('[acceptGroup] ℹ️  No hay dinero pendiente para transferir');
+    }
+
+    console.log('[acceptGroup] ========================================');
     return this.enrichGroup({ ...group, riderId, status: 'assigned' });
   }
 

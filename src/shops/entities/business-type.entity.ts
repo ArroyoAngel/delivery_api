@@ -1,9 +1,13 @@
-import { Column, Entity, PrimaryColumn } from 'typeorm';
+import { Column, Entity, OneToMany, PrimaryColumn } from 'typeorm';
+import { ShopCategoryEntity } from './shop-category.entity';
 
 @Entity('business_types')
 export class BusinessTypeEntity {
-  /** Código en inglés, usado como PK y como valor en shops.business_type */
+  /** Código en inglés, usado como PK */
   @PrimaryColumn({ type: 'varchar' }) value: string;
+
+  @OneToMany(() => ShopCategoryEntity, (cat) => cat.businessType)
+  categories: ShopCategoryEntity[];
 
   /** Etiqueta para mostrar en el UI */
   @Column({ type: 'varchar' }) label: string;

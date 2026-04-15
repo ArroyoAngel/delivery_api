@@ -100,6 +100,17 @@ export class OrdersService {
     groupId?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
+    console.log('[createPendingPayment] Insertando payment:', {
+      reference: params.reference,
+      scopeType: params.scopeType,
+      orderId: params.orderId,
+      groupId: params.groupId,
+      subtotal: params.subtotal,
+      deliveryFee: params.deliveryFee,
+      platformFee: params.platformFee,
+      totalAmount: params.totalAmount,
+    });
+
     await this.dataSource.query(
       `INSERT INTO payments (
           reference, scope_type, order_id, group_id, payer_account_id,
@@ -125,6 +136,7 @@ export class OrdersService {
         JSON.stringify(params.metadata ?? {}),
       ],
     );
+    console.log('[createPendingPayment] ✓ Payment insertado exitosamente');
   }
 
   async findMyOrders(userId: string) {
@@ -254,12 +266,8 @@ export class OrdersService {
       if (!shops.length)
         throw new NotFoundException('Negocio no encontrado');
       const shopDisabled = shops[0].status === 'disabled';
+      console.log('[create] shopId:', dto.shopId, 'shopStatus:', shops[0].status, 'shopDisabled:', shopDisabled, 'paymentMethod:', dto.paymentMethod);
       const deliveryType = dto.deliveryType ?? 'delivery';
-      if (shopDisabled && deliveryType !== 'express') {
-        throw new BadRequestException(
-          'Este negocio solo acepta pedidos express por el momento.',
-        );
-      }
       const deliveryFee =
         deliveryType === 'recogida' ? 0
         : deliveryType === 'express' ? platformDeliveryFees.express
@@ -313,10 +321,21 @@ export class OrdersService {
       }
 
       const isCash = dto.paymentMethod === 'cash';
+
+      // Determinar estado según método de pago y membresía del restaurante
+      let status: string;
+      if (isCash) {
+        // Efectivo: si no tiene membresía (disabled) → listo; si tiene → confirmado
+        status = shopDisabled ? 'listo' : 'confirmado';
+      } else {
+        // QR: siempre empieza en pendiente (espera comprobante)
+        status = 'pendiente';
+      }
+
       const order = em.create(OrderEntity, {
         clientId: userId,
         shopId: dto.shopId,
-        status: shopDisabled ? 'listo' : isCash ? 'confirmado' : 'pendiente',
+        status,
         deliveryType,
         deliveryAddress,
         deliveryLat,
@@ -330,9 +349,6 @@ export class OrdersService {
         couponAbsorbs,
         orderSize,
         paymentMethod: dto.paymentMethod ?? 'qr',
-        riderInstructions: shopDisabled
-          ? 'Ir al negocio, pedir en caja, esperar el pedido y recoger.'
-          : undefined,
         notes: dto.notes,
       });
       const saved = await em.save(OrderEntity, order);
@@ -369,37 +385,115 @@ export class OrdersService {
 
     if (saved.deliveryType === 'express') {
       const group = await this.deliveryGroups.createGroupForOrders([saved.id]);
-      // Si el negocio estaba deshabilitado la orden ya nació en 'listo' — activar grupo inmediatamente
+      // Intentar activar grupo si todas las órdenes están en estado 'listo'
       await this.deliveryGroups.checkAndActivateGroup(group.id);
       const paymentReference = this.buildPaymentReference('group', group.id);
-      await this.createPendingPayment({
-        reference: paymentReference,
-        scopeType: 'group',
-        groupId: group.id,
-        payerAccountId: userId,
-        subtotal: Number(saved.subtotal ?? 0),
-        deliveryFee: Number(saved.deliveryFee ?? 0),
-        platformFee: Number(saved.platformFee ?? 0),
-        totalAmount: Number(saved.total ?? 0),
-        metadata: { deliveryType: 'express', orderIds: [saved.id] },
-      });
+
+      // Para efectivo, crear payment como 'confirmed' e inmediatamente distribuir dinero
+      if (saved.paymentMethod === 'cash') {
+        await this.dataSource.query(
+          `INSERT INTO payments (
+            reference, scope_type, group_id, payer_account_id,
+            status, subtotal, delivery_fee, platform_fee, total_amount,
+            bank_provider, confirmed_at, metadata
+          ) VALUES (
+            $1, 'group', $2, $3,
+            'confirmed', $4, $5, $6, $7,
+            'cash', NOW(), $8::jsonb
+          )
+          ON CONFLICT (reference) DO NOTHING`,
+          [
+            paymentReference,
+            group.id,
+            userId,
+            Number(saved.subtotal ?? 0),
+            Number(saved.deliveryFee ?? 0),
+            Number(saved.platformFee ?? 0),
+            Number(saved.total ?? 0),
+            JSON.stringify({ deliveryType: 'express', channel: 'cash', orderIds: [saved.id] }),
+          ],
+        );
+
+        // Obtener el payment creado para distribuir el dinero
+        const [paymentRow] = await this.dataSource.query(
+          `SELECT * FROM payments WHERE group_id = $1 ORDER BY updated_at DESC LIMIT 1`,
+          [group.id],
+        );
+
+        if (paymentRow) {
+          await this._distributePayment(saved.id, saved.shopId, paymentRow);
+        }
+      } else {
+        // Para QR, crear payment en estado 'pending'
+        await this.createPendingPayment({
+          reference: paymentReference,
+          scopeType: 'group',
+          groupId: group.id,
+          payerAccountId: userId,
+          subtotal: Number(saved.subtotal ?? 0),
+          deliveryFee: Number(saved.deliveryFee ?? 0),
+          platformFee: Number(saved.platformFee ?? 0),
+          totalAmount: Number(saved.total ?? 0),
+          metadata: { deliveryType: 'express', orderIds: [saved.id] },
+        });
+      }
       return { ...saved, groupId: group.id, paymentReference };
     }
 
     if (saved.deliveryType === 'delivery') {
       const paymentReference = this.buildPaymentReference('order', saved.id);
       await this.orders.update(saved.id, { paymentReference });
-      await this.createPendingPayment({
-        reference: paymentReference,
-        scopeType: 'order',
-        orderId: saved.id,
-        payerAccountId: userId,
-        subtotal: Number(saved.subtotal ?? 0),
-        deliveryFee: Number(saved.deliveryFee ?? 0),
-        platformFee: Number(saved.platformFee ?? 0),
-        totalAmount: Number(saved.total ?? 0),
-        metadata: { deliveryType: 'delivery' },
-      });
+
+      // Para efectivo, crear payment como 'confirmed' e inmediatamente distribuir dinero
+      if (saved.paymentMethod === 'cash') {
+        await this.dataSource.query(
+          `INSERT INTO payments (
+            reference, scope_type, order_id, payer_account_id,
+            status, subtotal, delivery_fee, platform_fee, total_amount,
+            bank_provider, confirmed_at, metadata
+          ) VALUES (
+            $1, 'order', $2, $3,
+            'confirmed', $4, $5, $6, $7,
+            'cash', NOW(), $8::jsonb
+          )
+          ON CONFLICT (reference) DO NOTHING`,
+          [
+            paymentReference,
+            saved.id,
+            userId,
+            Number(saved.subtotal ?? 0),
+            Number(saved.deliveryFee ?? 0),
+            Number(saved.platformFee ?? 0),
+            Number(saved.total ?? 0),
+            JSON.stringify({ deliveryType: 'delivery', channel: 'cash' }),
+          ],
+        );
+
+        // Obtener el payment creado para distribuir el dinero
+        const [paymentRow] = await this.dataSource.query(
+          `SELECT * FROM payments WHERE order_id = $1 ORDER BY updated_at DESC LIMIT 1`,
+          [saved.id],
+        );
+
+        if (paymentRow) {
+          await this._distributePayment(saved.id, saved.shopId, paymentRow);
+        }
+      } else {
+        // Para QR, crear payment en estado 'pending'
+        console.log('[create] 💳 Creando payment pendiente para QR. paymentReference:', paymentReference, 'orderId:', saved.id);
+        await this.createPendingPayment({
+          reference: paymentReference,
+          scopeType: 'order',
+          orderId: saved.id,
+          payerAccountId: userId,
+          subtotal: Number(saved.subtotal ?? 0),
+          deliveryFee: Number(saved.deliveryFee ?? 0),
+          platformFee: Number(saved.platformFee ?? 0),
+          totalAmount: Number(saved.total ?? 0),
+          metadata: { deliveryType: 'delivery' },
+        });
+        console.log('[create] ✓ Payment creado exitosamente');
+      }
       return { ...saved, paymentReference, platformFee };
     }
 
@@ -556,6 +650,19 @@ export class OrdersService {
 
     const shop = await this.resolveShopForAccount(accountId);
 
+    // Obtener el status del shop para determinar el estado inicial de la orden
+    const [shopRow] = await this.dataSource.query(
+      `SELECT status FROM shops WHERE id = $1`,
+      [shop.id],
+    );
+
+    if (!shopRow) {
+      throw new NotFoundException(`No se encontró el restaurante con id ${shop.id}`);
+    }
+
+    const shopDisabled = shopRow.status === 'disabled';
+    console.log('[createShopLocalCashOrder] shopId:', shop.id, 'shopStatus:', shopRow.status, 'isDisabled:', shopDisabled, 'finalStatus:', shopDisabled ? 'listo' : 'confirmado');
+
     const saved = await this.dataSource.transaction(async (em) => {
       let subtotal = 0;
       let orderSize = 0;
@@ -619,10 +726,15 @@ export class OrdersService {
         .filter(Boolean)
         .join(' | ');
 
+      // Determinar estado según membresía del restaurante
+      // Si no tiene membresía (disabled) → listo
+      // Si tiene membresía (enabled) → confirmado
+      const initialStatus = shopDisabled ? 'listo' : 'confirmado';
+
       const order = em.create(OrderEntity, {
         clientId: accountId,
         shopId: shop.id,
-        status: 'confirmado',
+        status: initialStatus,
         deliveryType: 'recogida',
         deliveryAddress: isPickup
           ? 'Recojo en tienda'
@@ -692,6 +804,16 @@ export class OrdersService {
 
       return { ...persisted, paymentReference };
     });
+
+    // Obtener el payment creado para distribuir el dinero
+    const [paymentRow] = await this.dataSource.query(
+      `SELECT * FROM payments WHERE order_id = $1 ORDER BY updated_at DESC LIMIT 1`,
+      [saved.id],
+    );
+
+    if (paymentRow) {
+      await this._distributePayment(saved.id, saved.shopId, paymentRow);
+    }
 
     this.notifications
       .notifyShopNewOrder(saved.shopId, saved.id)
@@ -871,7 +993,7 @@ export class OrdersService {
       (o) => !['cancelado', 'entregado', 'confirmado', 'preparando', 'listo', 'en_camino'].includes(o.status),
     );
     for (const o of unpaid) {
-      await this.orders.update(o.id, { status: 'confirmado' });
+      await this.orders.update(o.id, { status: 'confirmado', paidAt: new Date() });
       this.notifications
         .notifyShopNewOrder(o.shopId, o.id)
         .catch(() => null);
@@ -1040,7 +1162,7 @@ export class OrdersService {
         `Monto insuficiente: se requieren Bs ${targetTotal}, recibido Bs ${paidAmount}`,
       );
     }
-    await this.orders.update(orderId, { status: 'confirmado' });
+    await this.orders.update(orderId, { status: 'confirmado', paidAt: new Date() });
     this.notifications
       .notifyShopNewOrder(order.shopId, orderId)
       .catch(() => null);
@@ -1090,7 +1212,15 @@ export class OrdersService {
     shopId: string,
     payment: any,
   ): Promise<void> {
-    if (!payment) return;
+    if (!payment) {
+      console.log('[_distributePayment] ❌ Payment es null/undefined');
+      return;
+    }
+
+    console.log('[_distributePayment] ================== INICIANDO ==================');
+    console.log('[_distributePayment] orderId:', orderId);
+    console.log('[_distributePayment] shopId:', shopId);
+    console.log('[_distributePayment] payment:', { id: payment.id, subtotal: payment.subtotal, delivery_fee: payment.delivery_fee, platform_fee: payment.platform_fee });
 
     const commissionPct = await this.cfg.getNumber('shop_commission_pct', 0);
     const subtotal = Number(payment.subtotal ?? 0);
@@ -1098,13 +1228,23 @@ export class OrdersService {
     const platformFeeBase = Number(payment.platform_fee ?? 0);
     const paymentId = payment.id;
 
-    // Recuperar datos del cupón de la orden para ajustar distribución
+    console.log('[_distributePayment] 💰 Montos: subtotal=', subtotal, 'deliveryFee=', deliveryFee, 'platformFee=', platformFeeBase);
+
+    // Recuperar datos del cupón y status del shop
     const [orderRow] = await this.dataSource.query(
       `SELECT coupon_discount, coupon_absorbs FROM orders WHERE id = $1`,
       [orderId],
     );
+    const [shopRow] = await this.dataSource.query(
+      `SELECT status FROM shops WHERE id = $1`,
+      [shopId],
+    );
     const couponDiscount = Number(orderRow?.coupon_discount ?? 0);
     const couponAbsorbs = orderRow?.coupon_absorbs ?? null;
+    const shopDisabled = shopRow?.status === 'disabled';
+
+    console.log('[_distributePayment] 🏪 Shop: status=', shopRow?.status, 'disabled=', shopDisabled);
+    console.log('[_distributePayment] 🎟️  Cupón: discount=', couponDiscount, 'absorbs=', couponAbsorbs);
 
     const commission = subtotal * commissionPct / 100;
     // Si el negocio absorbe el cupón, se descuenta de su crédito
@@ -1112,21 +1252,48 @@ export class OrdersService {
     const restaurantAmount = Math.max(0, subtotal - commission - shopCouponDeduction);
     const platformAmount = platformFeeBase + commission;
 
+    console.log('[_distributePayment] 📊 Cálculos: commission=', commission, 'shopCouponDeduction=', shopCouponDeduction, 'restaurantAmount=', restaurantAmount, 'platformAmount=', platformAmount);
+
     // Persistir commission_amount en la orden para historial
     await this.dataSource.query(
       `UPDATE orders SET commission_amount = $1 WHERE id = $2`,
       [commission, orderId],
     );
+    console.log('[_distributePayment] ✓ commission_amount actualizado');
 
-    // ── Negocio ─────────────────────────────────────────────────────────
-    if (restaurantAmount > 0) {
-      await this.dataSource.query(
-        `INSERT INTO wallet_transactions
-           (owner_type, owner_id, payment_id, order_id, entry_type, amount, status, description)
-         VALUES ('shop', $1, $2, $3, 'credit', $4, 'confirmed',
-                 'Venta confirmada')`,
-        [shopId, paymentId, orderId, restaurantAmount],
-      );
+    // ── Distribución según membresía del shop ─────────────────────────────────
+    if (shopDisabled) {
+      console.log('[_distributePayment] 🚴 Restaurante DISABLED → dinero va al RIDER');
+      // ── Restaurante sin membresía: dinero va al rider (pendiente de asignación) ──
+      if (restaurantAmount > 0) {
+        console.log('[_distributePayment] Insertando wallet_transaction: owner_type=rider, amount=', restaurantAmount, 'status=pending_assignment');
+        await this.dataSource.query(
+          `INSERT INTO wallet_transactions
+             (owner_type, owner_id, payment_id, order_id, entry_type, amount, status, description)
+           VALUES ('rider', NULL, $1, $2, 'credit', $3, 'pending_assignment',
+                   'Pago de orden (restaurante sin membresía) — pendiente asignación de repartidor')`,
+          [paymentId, orderId, restaurantAmount],
+        );
+        console.log('[_distributePayment] ✓ wallet_transaction insertada para RIDER');
+      } else {
+        console.log('[_distributePayment] ⚠️  restaurantAmount es 0 o negativo, no se inserta');
+      }
+    } else {
+      console.log('[_distributePayment] 🏪 Restaurante ENABLED → dinero va al SHOP');
+      // ── Restaurante con membresía: dinero va al shop ──
+      if (restaurantAmount > 0) {
+        console.log('[_distributePayment] Insertando wallet_transaction: owner_type=shop, owner_id=', shopId, 'amount=', restaurantAmount);
+        await this.dataSource.query(
+          `INSERT INTO wallet_transactions
+             (owner_type, owner_id, payment_id, order_id, entry_type, amount, status, description)
+           VALUES ('shop', $1, $2, $3, 'credit', $4, 'confirmed',
+                   'Venta confirmada')`,
+          [shopId, paymentId, orderId, restaurantAmount],
+        );
+        console.log('[_distributePayment] ✓ wallet_transaction insertada para SHOP');
+      } else {
+        console.log('[_distributePayment] ⚠️  restaurantAmount es 0 o negativo, no se inserta');
+      }
     }
 
     // ── Plataforma (cargo de servicio + comisión) ────────────────────────────
@@ -1134,8 +1301,10 @@ export class OrdersService {
       `SELECT id FROM accounts WHERE 'superadmin' = ANY(roles) LIMIT 1`,
     );
     const platformOwnerId = superadmin?.id ?? '00000000-0000-0000-0000-000000000000';
+    console.log('[_distributePayment] 🏛️  Plataforma owner_id=', platformOwnerId);
 
     if (platformAmount > 0) {
+      console.log('[_distributePayment] Insertando wallet_transaction: owner_type=platform, amount=', platformAmount);
       await this.dataSource.query(
         `INSERT INTO wallet_transactions
            (owner_type, owner_id, payment_id, order_id, entry_type, amount, status, description)
@@ -1143,10 +1312,12 @@ export class OrdersService {
                  'Cargo de servicio')`,
         [platformOwnerId, paymentId, orderId, platformAmount],
       );
+      console.log('[_distributePayment] ✓ wallet_transaction insertada para PLATAFORMA');
     }
 
     // ── Delivery (pendiente de asignación a repartidor) ──────────────────────
     if (deliveryFee > 0) {
+      console.log('[_distributePayment] Insertando wallet_transaction: owner_type=platform, amount=', deliveryFee, 'status=pending_rider');
       await this.dataSource.query(
         `INSERT INTO wallet_transactions
            (owner_type, owner_id, payment_id, order_id, entry_type, amount, status, description)
@@ -1154,7 +1325,9 @@ export class OrdersService {
                  'Fee de delivery — pendiente de repartidor')`,
         [platformOwnerId, paymentId, orderId, deliveryFee],
       );
+      console.log('[_distributePayment] ✓ wallet_transaction insertada para DELIVERY FEE');
     }
+    console.log('[_distributePayment] ================== FIN ==================');
   }
 
   async confirmPaymentByReference(
@@ -1282,6 +1455,185 @@ export class OrdersService {
         { status: 'Entregado', count: r.s_entregado },
         { status: 'Cancelado', count: r.s_cancelado },
       ].filter((s) => s.count > 0),
+    };
+  }
+
+  async uploadPaymentProof(
+    userId: string,
+    orderId: string,
+    proofUrl: string,
+  ): Promise<void> {
+    const order = await this.orders.findOne({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Orden no encontrada');
+    if (order.clientId !== userId)
+      throw new ForbiddenException('No tenés acceso a esta orden');
+    if (order.status !== 'pendiente')
+      throw new BadRequestException(
+        `No se puede subir comprobante para orden en estado '${order.status}'`,
+      );
+    if (order.paymentMethod !== 'qr')
+      throw new BadRequestException(
+        'Los pagos en efectivo no requieren comprobante',
+      );
+    await this.orders.update(orderId, { paymentProofUrl: proofUrl });
+  }
+
+  async manualConfirmPayment(orderId: string): Promise<any> {
+    console.log('[manualConfirmPayment] ========================================');
+    console.log('[manualConfirmPayment] Iniciando confirmación manual de pago para orderId:', orderId);
+
+    const order = await this.orders.findOne({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Orden no encontrada');
+    console.log('[manualConfirmPayment] Orden encontrada:', { id: order.id, status: order.status, shopId: order.shopId, total: order.total });
+
+    if (order.status !== 'pendiente')
+      throw new BadRequestException(
+        `No se puede confirmar pago para orden en estado '${order.status}'`,
+      );
+
+    // Determinar estado destino basado en si el shop está disabled
+    const [shop] = await this.dataSource.query(
+      'SELECT status FROM shops WHERE id = $1',
+      [order.shopId],
+    );
+    if (!shop) throw new NotFoundException('Negocio no encontrado');
+
+    const shopDisabled = shop.status === 'disabled';
+    const newStatus = shopDisabled ? 'listo' : 'confirmado';
+    console.log('[manualConfirmPayment] 🏪 Shop status:', shop.status, '→ newStatus:', newStatus);
+
+    // Actualizar estado de la orden y marcar como pagada
+    await this.orders.update(orderId, { status: newStatus, paidAt: new Date() });
+    console.log('[manualConfirmPayment] ✓ Orden actualizada a status:', newStatus);
+
+    // Si es "confirmado", notificar al negocio
+    if (newStatus === 'confirmado') {
+      this.notifications
+        .notifyShopNewOrder(order.shopId, orderId)
+        .catch(() => null);
+      console.log('[manualConfirmPayment] 📧 Notificación enviada al negocio');
+    }
+
+    // Si es "listo", activar grupo de entrega si existe
+    if (newStatus === 'listo') {
+      console.log('[manualConfirmPayment] 🚚 Activando grupo de entrega...');
+      if (order.groupId) {
+        await this.deliveryGroups.checkAndActivateGroup(order.groupId);
+        console.log('[manualConfirmPayment] ✓ Grupo activado:', order.groupId);
+      } else {
+        await this.deliveryGroups.tryGroupOrders();
+        console.log('[manualConfirmPayment] ✓ tryGroupOrders ejecutado');
+      }
+    }
+
+    // Actualizar payment como confirmado
+    await this.dataSource.query(
+      `UPDATE payments
+       SET status = 'confirmed',
+           confirmed_at = COALESCE(confirmed_at, NOW()),
+           updated_at = NOW()
+       WHERE order_id = $1`,
+      [orderId],
+    );
+    console.log('[manualConfirmPayment] ✓ Payment actualizado a status: confirmed');
+
+    // Distribuir fondos
+    console.log('[manualConfirmPayment] 🔍 Buscando payment. orderId:', orderId, 'groupId:', order.groupId);
+
+    let payment;
+
+    // Si la orden tiene groupId, buscar payment por group_id (para express delivery)
+    if (order.groupId) {
+      console.log('[manualConfirmPayment] 🔍 Orden tiene groupId, buscando payment por group_id...');
+      const [paymentByGroup] = await this.dataSource.query(
+        `SELECT id, subtotal, delivery_fee, platform_fee, total_amount
+         FROM payments WHERE group_id = $1 LIMIT 1`,
+        [order.groupId],
+      );
+      payment = paymentByGroup;
+      console.log('[manualConfirmPayment] 💳 Payment encontrado por group_id:', payment);
+    } else {
+      // Si no tiene groupId, buscar payment por order_id
+      console.log('[manualConfirmPayment] 🔍 Orden NO tiene groupId, buscando payment por order_id...');
+      const [paymentByOrder] = await this.dataSource.query(
+        `SELECT id, subtotal, delivery_fee, platform_fee, total_amount
+         FROM payments WHERE order_id = $1 LIMIT 1`,
+        [orderId],
+      );
+      payment = paymentByOrder;
+      console.log('[manualConfirmPayment] 💳 Payment encontrado por order_id:', payment);
+    }
+
+    if (payment) {
+      console.log('[manualConfirmPayment] 📊 Llamando _distributePayment...');
+      await this._distributePayment(orderId, order.shopId, payment);
+      console.log('[manualConfirmPayment] ✓ _distributePayment completado');
+    } else {
+      console.log('[manualConfirmPayment] ⚠️  No se encontró payment (ni por order_id ni por group_id)');
+    }
+
+    // Emitir evento
+    this.eventEmitter.emit('payment.confirmed', {
+      orderId,
+      clientId: order.clientId,
+      total: Number(order.total),
+    });
+
+    this.events.emitOrderUpdated();
+
+    return {
+      id: orderId,
+      status: newStatus,
+      paidAt: new Date().toISOString(),
+      total: Number(order.total),
+    };
+  }
+
+  async rejectPayment(
+    orderId: string,
+    reason: string,
+  ): Promise<any> {
+    const order = await this.orders.findOne({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Orden no encontrada');
+    if (order.status !== 'pendiente')
+      throw new BadRequestException(
+        `No se puede rechazar pago para orden en estado '${order.status}'`,
+      );
+
+    // Actualizar orden a cancelado
+    await this.orders.update(orderId, {
+      status: 'cancelado',
+      cancelReason: reason || null,
+    });
+
+    // Actualizar payment como rejected
+    await this.dataSource.query(
+      `UPDATE payments
+       SET status = 'rejected',
+           updated_at = NOW()
+       WHERE order_id = $1`,
+      [orderId],
+    );
+
+    // Notificar al cliente
+    const [shop] = await this.dataSource.query(
+      'SELECT name FROM shops WHERE id = $1',
+      [order.shopId],
+    );
+    this.notifications
+      .notifyClientOrderCancelled(
+        order.clientId,
+        reason || 'Comprobante de pago rechazado',
+        shop?.name ?? '',
+      )
+      .catch(() => null);
+
+    this.events.emitOrderUpdated();
+
+    return {
+      id: orderId,
+      status: 'cancelado',
+      reason,
     };
   }
 }

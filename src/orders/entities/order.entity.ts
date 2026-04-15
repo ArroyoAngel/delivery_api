@@ -70,6 +70,8 @@ export class OrderEntity {
   @Column({ name: 'coupon_absorbs', nullable: true }) couponAbsorbs: string;
   @Column({ name: 'rider_instructions', nullable: true }) riderInstructions: string;
   @Column({ name: 'payment_method', default: 'qr' }) paymentMethod: string; // 'qr' | 'cash'
+  @Column({ name: 'payment_proof_url', type: 'text', nullable: true }) paymentProofUrl: string | null;
+  @Column({ name: 'paid_at', type: 'timestamp', nullable: true }) paidAt: Date | null;
   @Column({ name: 'cancel_reason', type: 'varchar', length: 500, nullable: true }) cancelReason: string | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
   @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;

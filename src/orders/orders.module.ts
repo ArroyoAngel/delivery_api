@@ -11,6 +11,7 @@ import { SystemConfigModule } from '../system-config/system-config.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { CreditsModule } from '../credits/credits.module';
 import { EventsModule } from '../events/events.module';
+import { FirebaseStorageModule } from '../firebase-storage/firebase-storage.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { EventsModule } from '../events/events.module';
     CouponsModule,
     CreditsModule,
     EventsModule,
+    FirebaseStorageModule,
   ],
   controllers: [OrdersController, PaymentsController],
   providers: [OrdersService],

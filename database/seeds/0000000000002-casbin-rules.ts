@@ -98,8 +98,14 @@ export class CasbinRules0000000000002 implements MigrationInterface {
       [AD, '/api/shops/:id/schedule/:day',        'PATCH',         BE],
       [SA, '/api/shops/:id/upload-qr',            'POST',          BE],
       [AD, '/api/shops/:id/upload-qr',            'POST',          BE],
+      [SA, '/api/shops/:id/upload-image',         'POST',          BE],
+      [AD, '/api/shops/:id/upload-image',         'POST',          BE],
+      [SA, '/api/shops/:id/image',                'DELETE',        BE],
+      [AD, '/api/shops/:id/image',                'DELETE',        BE],
       [SA, '/api/shops/:id/upload-menu-image',    'POST',          BE],
       [AD, '/api/shops/:id/upload-menu-image',    'POST',          BE],
+      [SA, '/api/shops/:id/categories',           'POST',          BE],
+      [AD, '/api/shops/:id/categories',           'POST',          BE],
 
       // ── RIDER ─────────────────────────────────────────────────────────────
       [SA, '/api/rider/list',                       'GET',  BE],

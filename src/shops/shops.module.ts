@@ -8,6 +8,8 @@ import { ShopEntity } from './entities/shop.entity';
 import { MenuItemEntity } from './entities/menu-item.entity';
 import { ShopScheduleEntity } from './entities/shop-schedule.entity';
 import { BusinessTypeEntity } from './entities/business-type.entity';
+import { ShopCategoryEntity } from './entities/shop-category.entity';
+import { ShopCategoryAssignmentEntity } from './entities/shop-category-assignment.entity';
 import { AuthModule } from '../auth/auth.module';
 import { EventsModule } from '../events/events.module';
 import { ZonesModule } from '../zones/zones.module';
@@ -19,6 +21,8 @@ import { ZonesModule } from '../zones/zones.module';
       MenuItemEntity,
       ShopScheduleEntity,
       BusinessTypeEntity,
+      ShopCategoryEntity,
+      ShopCategoryAssignmentEntity,
     ]),
     AuthModule,
     EventsModule,

@@ -64,6 +64,19 @@ export class ShopsController {
     return this.shops.getCategories(businessType);
   }
 
+  @Post(':id/categories')
+  @UseGuards(JwtAuthGuard, CasbinGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Asignar categorías a un negocio' })
+  assignCategories(
+    @Param('id') id: string,
+    @Body() body: { categoryIds: string[] },
+    @Request() req: any,
+  ) {
+    const isSuperAdmin: boolean = req.user.roles?.includes('superadmin');
+    return this.shops.assignCategories(id, body.categoryIds, req.user.id, isSuperAdmin);
+  }
+
   // ── Crear negocio ─────────────────────────────────────────────────────────
 
   @Post()
@@ -81,12 +94,14 @@ export class ShopsController {
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'categoryId', required: false })
   @ApiQuery({ name: 'businessType', required: false, description: 'restaurant | supermarket | minimarket' })
+  @ApiQuery({ name: 'zoneId', required: false, description: 'Filtrar por zona de cobertura' })
   findAll(
     @Query('search') search?: string,
     @Query('categoryId') categoryId?: string,
     @Query('businessType') businessType?: string,
+    @Query('zoneId') zoneId?: string,
   ) {
-    return this.shops.findAll(search, categoryId, businessType);
+    return this.shops.findAll(search, categoryId, businessType, zoneId);
   }
 
   @Get('mine')
@@ -147,6 +162,43 @@ export class ShopsController {
     const url = await this.storage.upload(file, 'shops');
     const isSuperAdmin: boolean = req.user.roles?.includes('superadmin');
     return this.shops.uploadQrImage(id, url, req.user.id, isSuperAdmin);
+  }
+
+  @Post(':id/upload-image')
+  @UseGuards(JwtAuthGuard, CasbinGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Subir imagen principal del negocio' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        cb(null, /\.(jpg|jpeg|png|webp)$/i.test(file.originalname));
+      },
+    }),
+  )
+  async uploadImage(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req: any,
+  ) {
+    const url = await this.storage.upload(file, 'shops');
+    const isSuperAdmin: boolean = req.user.roles?.includes('superadmin');
+    return this.shops.uploadShopImage(id, url, req.user.id, isSuperAdmin);
+  }
+
+  @Delete(':id/image')
+  @UseGuards(JwtAuthGuard, CasbinGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Eliminar una imagen del negocio' })
+  async removeImage(
+    @Param('id') id: string,
+    @Query('imageUrl') imageUrl: string,
+    @Request() req: any,
+  ) {
+    const isSuperAdmin: boolean = req.user.roles?.includes('superadmin');
+    return this.shops.removeShopImage(id, imageUrl, req.user.id, isSuperAdmin);
   }
 
   // ── Menú ──────────────────────────────────────────────────────────────────

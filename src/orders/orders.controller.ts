@@ -6,8 +6,12 @@ import {
   Param,
   Body,
   UseGuards,
+  UseInterceptors,
   Request,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import {
@@ -19,6 +23,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CasbinGuard } from '../authorization/guards/casbin.guard';
 import { DeliveryGroupsService } from '../delivery-groups/delivery-groups.service';
+import { FirebaseStorageService } from '../firebase-storage/firebase-storage.service';
 
 @ApiTags('Orders')
 @Controller('orders')
@@ -28,6 +33,7 @@ export class OrdersController {
   constructor(
     private readonly orders: OrdersService,
     private readonly groups: DeliveryGroupsService,
+    private readonly firebase: FirebaseStorageService,
   ) {}
 
   @Get()
@@ -196,5 +202,39 @@ export class OrdersController {
   @ApiOperation({ summary: 'Confirmar entrega al cliente — rider' })
   markDone(@Request() req: any, @Param('id') id: string) {
     return this.groups.markOrderDelivered(req.user.id, id);
+  }
+
+  // ── Confirmación manual de pago QR ─────────────────────────────────────
+  @Post(':id/payment-proof')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Subir comprobante de pago (cliente)' })
+  async uploadPaymentProof(
+    @Request() req,
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('No file provided');
+    const proofUrl = await this.firebase.upload(file, 'payment-proofs');
+    await this.orders.uploadPaymentProof(req.user.id, id, proofUrl);
+    return { id, proofUrl };
+  }
+
+  @Post(':id/confirm-manual')
+  @UseGuards(CasbinGuard)
+  @ApiOperation({
+    summary: 'Confirmar pago manualmente (superadmin) — respeta regla de membresía',
+  })
+  manualConfirmPayment(@Param('id') id: string) {
+    return this.orders.manualConfirmPayment(id);
+  }
+
+  @Post(':id/reject-payment')
+  @UseGuards(CasbinGuard)
+  @ApiOperation({ summary: 'Rechazar pago (superadmin)' })
+  rejectPayment(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.orders.rejectPayment(id, body.reason || '');
   }
 }

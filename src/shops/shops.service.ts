@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -7,6 +8,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, ILike } from 'typeorm';
 import { ShopEntity } from './entities/shop.entity';
 import { BusinessTypeEntity } from './entities/business-type.entity';
+import { ShopCategoryEntity } from './entities/shop-category.entity';
+import { ShopCategoryAssignmentEntity } from './entities/shop-category-assignment.entity';
 import { ShopStaffPermission } from './shop-staff-permission.enum';
 import { EventsGateway } from '../events/events.gateway';
 import { ZonesService } from '../zones/zones.service';
@@ -18,6 +21,10 @@ export class ShopsService {
     private shops: Repository<ShopEntity>,
     @InjectRepository(BusinessTypeEntity)
     private businessTypes: Repository<BusinessTypeEntity>,
+    @InjectRepository(ShopCategoryEntity)
+    private categories: Repository<ShopCategoryEntity>,
+    @InjectRepository(ShopCategoryAssignmentEntity)
+    private assignments: Repository<ShopCategoryAssignmentEntity>,
     private dataSource: DataSource,
     private events: EventsGateway,
     private zones: ZonesService,
@@ -40,7 +47,7 @@ export class ShopsService {
     name: string;
     address: string;
     description?: string;
-    businessType?: string;
+    businessTypeId?: string;
     ownerAccountId?: string;
     deliveryTimeMin?: number;
     minimumOrder?: number;
@@ -48,22 +55,22 @@ export class ShopsService {
     longitude?: number;
   }) {
     let zoneId: string | null = null;
-    let outsideZone = false;
 
     if (dto.latitude != null && dto.longitude != null) {
       const zone = await this.zones.detect(dto.latitude, dto.longitude);
-      if (zone) {
-        zoneId = zone.id;
-      } else {
-        outsideZone = true;
+      if (!zone) {
+        throw new BadRequestException(
+          'El negocio está fuera del área de cobertura',
+        );
       }
+      zoneId = zone.id;
     }
 
     const shop = this.shops.create({
       name: dto.name,
       address: dto.address,
       description: dto.description,
-      businessType: dto.businessType ?? 'restaurant',
+      businessTypeId: dto.businessTypeId ?? 'restaurant',
       ownerAccountId: dto.ownerAccountId,
       deliveryTimeMin: dto.deliveryTimeMin ?? 30,
       minimumOrder: dto.minimumOrder ?? 0,
@@ -72,18 +79,35 @@ export class ShopsService {
       zoneId,
     });
     const saved = await this.shops.save(shop);
-    return { ...saved, outsideZone };
+    return saved;
   }
 
-  async findAll(search?: string, categoryId?: string, businessType?: string) {
+  async findAll(
+    search?: string,
+    categoryId?: string,
+    businessType?: string,
+    zoneId?: string,
+  ) {
     const where: any = { isOpen: true };
     if (search) where.name = ILike(`%${search}%`);
-    if (categoryId) where.categoryId = categoryId;
-    if (businessType) where.businessType = businessType;
-    const list = await this.shops.find({
+    if (businessType) where.businessTypeId = businessType;
+    if (zoneId) where.zoneId = zoneId;
+
+    let list = await this.shops.find({
       where,
       order: { rating: 'DESC' },
     });
+
+    // Filter by category if provided (requires joining with shop_category_assignments)
+    if (categoryId) {
+      const shopIdsWithCategory = await this.dataSource.query(
+        `SELECT DISTINCT shop_id FROM shop_category_assignments WHERE category_id = $1`,
+        [categoryId],
+      );
+      const validShopIds = shopIdsWithCategory.map((row: any) => row.shop_id);
+      list = list.filter((shop) => validShopIds.includes(shop.id));
+    }
+
     return list;
   }
 
@@ -148,6 +172,46 @@ export class ShopsService {
     shop.qrImageUrl = url;
     await this.shops.save(shop);
     return { url };
+  }
+
+  async uploadShopImage(
+    id: string,
+    url: string,
+    requesterAccountId?: string,
+    isSuperAdmin?: boolean,
+  ) {
+    const shop = await this.shops.findOne({ where: { id } });
+    if (!shop) throw new NotFoundException('Negocio no encontrado');
+    if (!isSuperAdmin && requesterAccountId) {
+      await this.assertShopAccess(id, requesterAccountId, ShopStaffPermission.MANAGE_SHOP);
+    }
+
+    // Agregar imagen al array (máximo 5)
+    if (!shop.imageUrls) shop.imageUrls = [];
+    if (shop.imageUrls.length >= 5) {
+      throw new BadRequestException('Máximo 5 imágenes permitidas');
+    }
+
+    shop.imageUrls.push(url);
+    await this.shops.save(shop);
+    return { imageUrls: shop.imageUrls };
+  }
+
+  async removeShopImage(
+    id: string,
+    imageUrl: string,
+    requesterAccountId?: string,
+    isSuperAdmin?: boolean,
+  ) {
+    const shop = await this.shops.findOne({ where: { id } });
+    if (!shop) throw new NotFoundException('Negocio no encontrado');
+    if (!isSuperAdmin && requesterAccountId) {
+      await this.assertShopAccess(id, requesterAccountId, ShopStaffPermission.MANAGE_SHOP);
+    }
+
+    shop.imageUrls = (shop.imageUrls || []).filter((url) => url !== imageUrl);
+    await this.shops.save(shop);
+    return { imageUrls: shop.imageUrls };
   }
 
   async updateShop(
@@ -309,13 +373,65 @@ export class ShopsService {
   async getCategories(businessType?: string) {
     if (businessType) {
       return this.dataSource.query(
-        'SELECT * FROM shop_categories WHERE business_type = $1 ORDER BY sort_order',
+        'SELECT * FROM shop_categories WHERE business_type_id = $1 ORDER BY sort_order',
         [businessType],
       );
     }
     return this.dataSource.query(
-      'SELECT * FROM shop_categories ORDER BY business_type, sort_order',
+      'SELECT * FROM shop_categories ORDER BY business_type_id, sort_order',
     );
+  }
+
+  async assignCategories(
+    shopId: string,
+    categoryIds: string[],
+    requesterAccountId?: string,
+    isSuperAdmin?: boolean,
+  ) {
+    const shop = await this.shops.findOne({ where: { id: shopId } });
+    if (!shop) throw new NotFoundException('Negocio no encontrado');
+
+    if (!isSuperAdmin && requesterAccountId) {
+      await this.assertShopAccess(
+        shopId,
+        requesterAccountId,
+        ShopStaffPermission.MANAGE_SHOP,
+      );
+    }
+
+    // Validar que todas las categorías existan y pertenezcan al mismo tipo de negocio
+    if (categoryIds.length > 0) {
+      const categories = await this.categories.find({
+        where: { id: categoryIds as any },
+      });
+
+      if (categories.length !== categoryIds.length) {
+        throw new BadRequestException('Una o más categorías no existen');
+      }
+
+      // Verificar que todas las categorías pertenezcan al mismo business_type que el shop
+      const invalidCategories = categories.filter(
+        (c) => c.businessTypeId !== shop.businessTypeId,
+      );
+      if (invalidCategories.length > 0) {
+        throw new BadRequestException(
+          `Las categorías no corresponden al tipo de negocio "${shop.businessTypeId}"`,
+        );
+      }
+    }
+
+    // Eliminar asignaciones previas
+    await this.assignments.delete({ shopId });
+
+    // Crear nuevas asignaciones
+    if (categoryIds.length > 0) {
+      const newAssignments = categoryIds.map((categoryId) =>
+        this.assignments.create({ shopId, categoryId }),
+      );
+      await this.assignments.save(newAssignments);
+    }
+
+    return { shopId, categoryIds, message: 'Categorías asignadas correctamente' };
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
@@ -339,7 +455,7 @@ export class ShopsService {
          GROUP BY mc.id ORDER BY mc.sort_order`,
         [shop.id],
       ),
-      this.businessTypes.findOne({ where: { value: shop.businessType } }),
+      this.businessTypes.findOne({ where: { value: shop.businessTypeId } }),
     ]);
     return {
       ...shop,
