@@ -401,9 +401,10 @@ export class ShopsService {
 
     // Validar que todas las categorías existan y pertenezcan al mismo tipo de negocio
     if (categoryIds.length > 0) {
-      const categories = await this.categories.find({
-        where: { id: categoryIds as any },
-      });
+      const categories = await this.dataSource.query(
+        'SELECT id, business_type_id FROM shop_categories WHERE id = ANY($1)',
+        [categoryIds],
+      );
 
       if (categories.length !== categoryIds.length) {
         throw new BadRequestException('Una o más categorías no existen');
@@ -411,7 +412,7 @@ export class ShopsService {
 
       // Verificar que todas las categorías pertenezcan al mismo business_type que el shop
       const invalidCategories = categories.filter(
-        (c) => c.businessTypeId !== shop.businessTypeId,
+        (c: any) => c.business_type_id !== shop.businessTypeId,
       );
       if (invalidCategories.length > 0) {
         throw new BadRequestException(

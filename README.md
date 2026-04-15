@@ -91,7 +91,7 @@ docker compose logs api --tail=50
 ### Verificar que funciona
 
 ```bash
-curl https://api.yaya.work/api/restaurants
+curl https://yaya.work/api/api/health
 ```
 
 ### Variables de entorno en QA
@@ -159,12 +159,46 @@ npm run build
 
 ---
 
+## Ver logs del Docker
+
+```bash
+# Ver últimos logs
+docker logs yaya-eats-api-1
+
+# Ver logs en tiempo real
+docker logs -f yaya-eats-api-1
+
+# Ver últimas 50 líneas en tiempo real
+docker logs -f --tail 50 yaya-eats-api-1
+
+# Ver logs de una fecha específica
+docker logs yaya-eats-api-1 | grep "2026-04-15"
+```
+
+---
+
+## Troubleshooting
+
+**Error de conexión a la base de datos en Docker**
+- Verifica que `DB_HOST=postgres` en `.env` (no `localhost`)
+- El contenedor Docker usa `postgres` como hostname, no `localhost`
+
+**Error: EListen EADDRINUSE :::3002**
+- El puerto 3002 ya está en uso
+- Mata el proceso: `lsof -ti:3002 | xargs kill -9`
+
+**Cambios en `.env` no se aplican**
+- Reconstruir la imagen es necesario si cambió el código
+- Solo cambios en `.env` → reiniciar sin rebuild: `docker compose up -d api`
+
+---
+
 ## Estructura de puertos
 
 | Entorno | URL |
 |---------|-----|
 | Local   | `http://localhost:3002/api` |
-| QA      | `https://api.yaya.work/api` |
+| QA      | `https://yaya.work/api` |
 
 ---
 
