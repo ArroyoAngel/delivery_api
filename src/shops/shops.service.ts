@@ -438,7 +438,7 @@ export class ShopsService {
   // ── helpers ───────────────────────────────────────────────────────────────
 
   private async attachMenu(shop: ShopEntity) {
-    const [menuCategories, businessType] = await Promise.all([
+    const [menuCategories, businessType, assignedCategories] = await Promise.all([
       this.dataSource.query(
         `SELECT mc.id, mc.name, mc.sort_order AS "sortOrder",
             json_agg(
@@ -457,6 +457,10 @@ export class ShopsService {
         [shop.id],
       ),
       this.businessTypes.findOne({ where: { value: shop.businessTypeId } }),
+      this.dataSource.query(
+        `SELECT category_id AS "id" FROM shop_category_assignments WHERE shop_id = $1`,
+        [shop.id],
+      ),
     ]);
     return {
       ...shop,
@@ -465,6 +469,7 @@ export class ShopsService {
         ...c,
         items: c.items ?? [],
       })),
+      assignedCategoryIds: assignedCategories.map((c: any) => c.id),
     };
   }
 
