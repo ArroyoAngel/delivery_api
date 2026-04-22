@@ -8,28 +8,28 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { BusinessTypeEntity } from './business-type.entity';
-import { ShopCategoryAssignmentEntity } from './shop-category-assignment.entity';
+import { MenuItemShopCategoryEntity } from './menu-item-shop-category.entity';
 
 @Entity('shop_categories')
 export class ShopCategoryEntity {
-  @PrimaryGeneratedColumn('uuid') id: string;
+  @PrimaryGeneratedColumn('uuid') id!: string;
 
-  @Column() name: string;
+  @Column() name!: string;
 
-  @Column({ nullable: true }) icon: string;
+  @Column({ nullable: true }) icon!: string;
 
-  @Column({ name: 'sort_order', default: 0 }) sortOrder: number;
+  @Column({ name: 'sort_order', default: 0 }) sortOrder!: number;
 
   @Column({ name: 'business_type_id' })
-  businessTypeId: string;
+  businessTypeId!: string;
 
   @ManyToOne(() => BusinessTypeEntity, (bt) => bt.categories)
   @JoinColumn({ name: 'business_type_id' })
-  businessType: BusinessTypeEntity;
+  businessType!: BusinessTypeEntity;
 
-  @OneToMany(() => ShopCategoryAssignmentEntity, (assign) => assign.category)
-  shopAssignments: ShopCategoryAssignmentEntity[];
+  @OneToMany(() => MenuItemShopCategoryEntity, (assign) => assign.shopCategory)
+  menuItemCategories!: MenuItemShopCategoryEntity[];
 
   @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  createdAt!: Date;
 }

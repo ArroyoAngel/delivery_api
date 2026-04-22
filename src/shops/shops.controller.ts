@@ -64,19 +64,6 @@ export class ShopsController {
     return this.shops.getCategories(businessType);
   }
 
-  @Post(':id/categories')
-  @UseGuards(JwtAuthGuard, CasbinGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Asignar categorías a un negocio' })
-  assignCategories(
-    @Param('id') id: string,
-    @Body() body: { categoryIds: string[] },
-    @Request() req: any,
-  ) {
-    const isSuperAdmin: boolean = req.user.roles?.includes('superadmin');
-    return this.shops.assignCategories(id, body.categoryIds, req.user.id, isSuperAdmin);
-  }
-
   // ── Crear negocio ─────────────────────────────────────────────────────────
 
   @Post()
@@ -254,6 +241,22 @@ export class ShopsController {
   ) {
     const isSuperAdmin: boolean = req.user.roles?.includes('superadmin');
     return this.shops.updateMenuItem(id, itemId, body, req.user.id, isSuperAdmin);
+  }
+
+  @Patch(':id/menu/:itemId/categories')
+  @UseGuards(JwtAuthGuard, CasbinGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Asignar categorías a un producto del menú',
+  })
+  assignItemCategories(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() body: { categoryIds: string[] },
+    @Request() req: any,
+  ) {
+    const isSuperAdmin: boolean = req.user.roles?.includes('superadmin');
+    return this.shops.assignMenuItemCategories(itemId, body.categoryIds, req.user.id, isSuperAdmin);
   }
 
   // ── Personal del negocio ──────────────────────────────────────────────────

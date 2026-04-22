@@ -9,7 +9,7 @@ import { Repository, DataSource, ILike } from 'typeorm';
 import { ShopEntity } from './entities/shop.entity';
 import { BusinessTypeEntity } from './entities/business-type.entity';
 import { ShopCategoryEntity } from './entities/shop-category.entity';
-import { ShopCategoryAssignmentEntity } from './entities/shop-category-assignment.entity';
+import { MenuItemShopCategoryEntity } from './entities/menu-item-shop-category.entity';
 import { ShopStaffPermission } from './shop-staff-permission.enum';
 import { EventsGateway } from '../events/events.gateway';
 import { ZonesService } from '../zones/zones.service';
@@ -23,8 +23,8 @@ export class ShopsService {
     private businessTypes: Repository<BusinessTypeEntity>,
     @InjectRepository(ShopCategoryEntity)
     private categories: Repository<ShopCategoryEntity>,
-    @InjectRepository(ShopCategoryAssignmentEntity)
-    private assignments: Repository<ShopCategoryAssignmentEntity>,
+    @InjectRepository(MenuItemShopCategoryEntity)
+    private menuItemCategories: Repository<MenuItemShopCategoryEntity>,
     private dataSource: DataSource,
     private events: EventsGateway,
     private zones: ZonesService,
@@ -98,13 +98,20 @@ export class ShopsService {
       order: { rating: 'DESC' },
     });
 
-    // Filter by category if provided (requires joining with shop_category_assignments)
+    // Filter by category if provided (now using menu_item_shop_categories)
+    // Includes validation that shop's businessType matches category's businessType
     if (categoryId) {
       const shopIdsWithCategory = await this.dataSource.query(
-        `SELECT DISTINCT shop_id FROM shop_category_assignments WHERE category_id = $1`,
+        `SELECT DISTINCT s.id
+         FROM shops s
+         JOIN menu_items mi ON mi.shop_id = s.id
+         JOIN menu_item_shop_categories misc ON misc.menu_item_id = mi.id
+         JOIN shop_categories sc ON sc.id = misc.shop_category_id
+         WHERE sc.id = $1
+           AND s.business_type_id = sc.business_type_id`,
         [categoryId],
       );
-      const validShopIds = shopIdsWithCategory.map((row: any) => row.shop_id);
+      const validShopIds = shopIdsWithCategory.map((row: any) => row.id);
       list = list.filter((shop) => validShopIds.includes(shop.id));
     }
 
@@ -262,6 +269,7 @@ export class ShopsService {
       isAvailable: boolean;
       stock: number | null;
       dailyLimit: number | null;
+      categoryIds: string[];
     }>,
     requesterAccountId?: string,
     isSuperAdmin?: boolean,
@@ -301,12 +309,20 @@ export class ShopsService {
       fields.push(`daily_limit = $${idx++}`);
       values.push(dto.dailyLimit ?? null);
     }
-    if (!fields.length) return item;
+    if (!fields.length && !dto.categoryIds?.length) return item;
     values.push(itemId);
-    await this.dataSource.query(
-      `UPDATE menu_items SET ${fields.join(', ')} WHERE id = $${idx}`,
-      values,
-    );
+    if (fields.length) {
+      await this.dataSource.query(
+        `UPDATE menu_items SET ${fields.join(', ')} WHERE id = $${idx}`,
+        values,
+      );
+    }
+
+    // Asignar categorías si se proporciona (incluso si es array vacío para limpiar categorías viejas)
+    if (dto.categoryIds !== undefined) {
+      await this.assignMenuItemCategories(itemId, dto.categoryIds, requesterAccountId, isSuperAdmin);
+    }
+
     return this.dataSource
       .query('SELECT * FROM menu_items WHERE id = $1', [itemId])
       .then((r) => r[0]);
@@ -341,6 +357,7 @@ export class ShopsService {
       stock?: number | null;
       dailyLimit?: number | null;
       size?: number;
+      categoryIds?: string[];
     },
   ) {
     const shop = await this.shops.findOne({
@@ -367,6 +384,12 @@ export class ShopsService {
         dto.size ?? 1,
       ],
     );
+
+    // Asignar categorías de shop si se proporciona
+    if (dto.categoryIds && dto.categoryIds.length > 0) {
+      await this.assignMenuItemCategories(row.id, dto.categoryIds);
+    }
+
     return row;
   }
 
@@ -382,31 +405,44 @@ export class ShopsService {
     );
   }
 
-  async assignCategories(
-    shopId: string,
-    categoryIds: string[],
+  /**
+   * Asigna categorías globales a un menu item específico.
+   * Las categorías del shop se derivan automáticamente de sus items.
+   */
+  async assignMenuItemCategories(
+    menuItemId: string,
+    shopCategoryIds: string[],
     requesterAccountId?: string,
     isSuperAdmin?: boolean,
   ) {
-    const shop = await this.shops.findOne({ where: { id: shopId } });
-    if (!shop) throw new NotFoundException('Negocio no encontrado');
+    // Obtener el menu item
+    const [menuItem] = await this.dataSource.query(
+      'SELECT * FROM menu_items WHERE id = $1',
+      [menuItemId],
+    );
+    if (!menuItem) throw new NotFoundException('Producto no encontrado');
 
+    // Verificar acceso al shop
     if (!isSuperAdmin && requesterAccountId) {
       await this.assertShopAccess(
-        shopId,
+        menuItem.shop_id,
         requesterAccountId,
-        ShopStaffPermission.MANAGE_SHOP,
+        ShopStaffPermission.MANAGE_MENU,
       );
     }
 
+    // Obtener el shop para validar business_type
+    const shop = await this.shops.findOne({ where: { id: menuItem.shop_id } });
+    if (!shop) throw new NotFoundException('Negocio no encontrado');
+
     // Validar que todas las categorías existan y pertenezcan al mismo tipo de negocio
-    if (categoryIds.length > 0) {
+    if (shopCategoryIds.length > 0) {
       const categories = await this.dataSource.query(
         'SELECT id, business_type_id FROM shop_categories WHERE id = ANY($1)',
-        [categoryIds],
+        [shopCategoryIds],
       );
 
-      if (categories.length !== categoryIds.length) {
+      if (categories.length !== shopCategoryIds.length) {
         throw new BadRequestException('Una o más categorías no existen');
       }
 
@@ -421,18 +457,18 @@ export class ShopsService {
       }
     }
 
-    // Eliminar asignaciones previas
-    await this.assignments.delete({ shopId });
+    // Eliminar asignaciones previas para este item
+    await this.menuItemCategories.delete({ menuItemId });
 
     // Crear nuevas asignaciones
-    if (categoryIds.length > 0) {
-      const newAssignments = categoryIds.map((categoryId) =>
-        this.assignments.create({ shopId, categoryId }),
+    if (shopCategoryIds.length > 0) {
+      const newAssignments = shopCategoryIds.map((categoryId) =>
+        this.menuItemCategories.create({ menuItemId, shopCategoryId: categoryId }),
       );
-      await this.assignments.save(newAssignments);
+      await this.menuItemCategories.save(newAssignments);
     }
 
-    return { shopId, categoryIds, message: 'Categorías asignadas correctamente' };
+    return { menuItemId, shopCategoryIds, message: 'Categorías del producto asignadas correctamente' };
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
@@ -447,7 +483,13 @@ export class ShopsService {
                 'price', mi.price, 'imageUrl', mi.image_url,
                 'isAvailable', mi.is_available, 'stock', mi.stock,
                 'dailyLimit', mi.daily_limit, 'dailySold', mi.daily_sold,
-                'categoryId', mi.category_id
+                'categoryId', mi.category_id,
+                'categoryIds', COALESCE(
+                  (SELECT json_agg(misc.shop_category_id)
+                   FROM menu_item_shop_categories misc
+                   WHERE misc.menu_item_id = mi.id),
+                  '[]'::json
+                )
               ) ORDER BY mi.name
             ) FILTER (WHERE mi.id IS NOT NULL) AS items
          FROM menu_categories mc
@@ -458,7 +500,12 @@ export class ShopsService {
       ),
       this.businessTypes.findOne({ where: { value: shop.businessTypeId } }),
       this.dataSource.query(
-        `SELECT category_id AS "id" FROM shop_category_assignments WHERE shop_id = $1`,
+        `SELECT DISTINCT sc.id, sc.name, sc.icon, sc.sort_order AS "sortOrder"
+         FROM shop_categories sc
+         JOIN menu_item_shop_categories misc ON misc.shop_category_id = sc.id
+         JOIN menu_items mi ON mi.id = misc.menu_item_id
+         WHERE mi.shop_id = $1
+         ORDER BY sc.sort_order`,
         [shop.id],
       ),
     ]);
